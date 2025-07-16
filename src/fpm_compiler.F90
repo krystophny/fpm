@@ -321,8 +321,7 @@ subroutine get_release_compile_flags(id, flags)
             flag_gnu_opt//&
             flag_gnu_external//&
             flag_gnu_pic//&
-            flag_gnu_limit//&
-            flag_gnu_coarray
+            flag_gnu_limit
 
     case(id_f95)
         flags = &
