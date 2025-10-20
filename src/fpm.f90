@@ -1,7 +1,7 @@
 module fpm
 use fpm_strings, only: string_t, operator(.in.), glob, join, string_cat, &
                       lower, str_ends_with, is_fortran_name, str_begins_with_str, &
-                      is_valid_module_name, len_trim, fnv_1a
+                      is_valid_module_name, len_trim
 use fpm_backend, only: build_package
 use fpm_command_line, only: fpm_build_settings, fpm_new_settings, &
                       fpm_run_settings, fpm_install_settings, fpm_test_settings, &
@@ -15,9 +15,6 @@ use fpm_model, only: fpm_model_t, srcfile_t, show_model, &
 use fpm_compiler, only: new_compiler, new_archiver, set_cpp_preprocessor_flags, &
                         id_intel_classic_nix,id_intel_classic_mac,id_intel_llvm_nix, &
                         id_intel_llvm_unknown
-use fpm_cache, only: fpm_cache_t, source_cache_t, new_cache, load_cache, save_cache, cache_is_valid, &
-                     hash_file_content, populate_cache_from_source
-use iso_fortran_env, only: int64
 
 
 use fpm_sources, only: add_executable_sources, add_sources_from_dir
@@ -49,7 +46,7 @@ subroutine build_model(model, settings, package_config, error)
     type(package_config_t), intent(inout), target :: package_config
     type(error_t), allocatable, intent(out) :: error
 
-    integer :: i, j, k
+    integer :: i, j
     type(package_config_t), allocatable, target  :: package, dependency_config, dependency
     type(package_config_t), pointer :: manifest
     type(platform_config_t), allocatable, target :: target_platform
@@ -57,9 +54,6 @@ subroutine build_model(model, settings, package_config, error)
     logical :: has_cpp
     logical :: duplicates_found, auto_exe, auto_example, auto_test
     type(string_t) :: include_dir
-    type(fpm_cache_t) :: source_cache
-    character(len=:), allocatable :: cache_path, manifest_path, dep_cache_path
-    integer(int64) :: manifest_hash, dep_hash
     
     ! Large variables -> safer on heap
     allocate(package,dependency_config,dependency,target_platform)
@@ -125,49 +119,9 @@ subroutine build_model(model, settings, package_config, error)
     end if
 
     allocate(model%packages(model%deps%ndep))
-
-    ! Initialize and load source cache before discovering sources
-    cache_path = join_path(settings%build_dir, "cache", "sources.toml")
-    manifest_path = join_path(settings%path_to_config, "fpm.toml")
-    dep_cache_path = join_path(settings%build_dir, "cache.toml")
-
-    ! Compute manifest hashes
-    manifest_hash = hash_file_content(manifest_path, error)
-    if (allocated(error)) then
-        deallocate(error)  ! Non-fatal: cache is optional
-        manifest_hash = 0_int64
-    end if
-
-    dep_hash = 0_int64
-    if (exists(dep_cache_path)) then
-        dep_hash = hash_file_content(dep_cache_path, error)
-        if (allocated(error)) then
-            deallocate(error)  ! Non-fatal
-            dep_hash = 0_int64
-        end if
-    end if
-
-    ! Load existing cache if valid
-    if (exists(cache_path)) then
-        call load_cache(source_cache, cache_path, error)
-        if (allocated(error)) then
-            if (settings%verbose) then
-                write(*,'(A)') '<WARN> Failed to load cache: ' // error%message
-            end if
-            deallocate(error)
-            call new_cache(source_cache, manifest_hash, dep_hash)
-        else if (.not.cache_is_valid(source_cache, manifest_path, dep_cache_path)) then
-            if (settings%verbose) then
-                write(*,'(A)') '<INFO> Cache invalidated (manifest or dependencies changed)'
-            end if
-            call new_cache(source_cache, manifest_hash, dep_hash)
-        end if
-    else
-        call new_cache(source_cache, manifest_hash, dep_hash)
-    end if
-
-    ! The current configuration may not have preprocessing, but some of its features may.
-    ! This means there will be directives that need to be considered even if not currently
+    
+    ! The current configuration may not have preprocessing, but some of its features may. 
+    ! This means there will be directives that need to be considered even if not currently 
     ! active. Turn preprocessing on even in this case
     has_cpp = package_config%has_cpp() .or. package%has_cpp()
 
@@ -223,7 +177,7 @@ subroutine build_model(model, settings, package_config, error)
                     if (is_dir(lib_dir)) then
                         call add_sources_from_dir(model%packages(i)%sources, lib_dir, FPM_SCOPE_LIB, &
                             with_f_ext=model%packages(i)%preprocess%suffixes, error=error, &
-                            preprocess=model%packages(i)%preprocess, cache=source_cache)
+                            preprocess=model%packages(i)%preprocess)
                         if (allocated(error)) exit
                     end if
                 end if
@@ -277,7 +231,7 @@ subroutine build_model(model, settings, package_config, error)
     if (is_dir('app') .and. auto_exe) then
         call add_sources_from_dir(model%packages(1)%sources,'app', FPM_SCOPE_APP, &
                                    with_executables=.true., with_f_ext=model%packages(1)%preprocess%suffixes,&
-                                   error=error,preprocess=model%packages(1)%preprocess,cache=source_cache)
+                                   error=error,preprocess=model%packages(1)%preprocess)
 
         if (allocated(error)) then
             return
@@ -288,7 +242,7 @@ subroutine build_model(model, settings, package_config, error)
         call add_sources_from_dir(model%packages(1)%sources,'example', FPM_SCOPE_EXAMPLE, &
                                   with_executables=.true., &
                                   with_f_ext=model%packages(1)%preprocess%suffixes,error=error,&
-                                  preprocess=model%packages(1)%preprocess,cache=source_cache)
+                                  preprocess=model%packages(1)%preprocess)
 
         if (allocated(error)) then
             return
@@ -299,7 +253,7 @@ subroutine build_model(model, settings, package_config, error)
         call add_sources_from_dir(model%packages(1)%sources,'test', FPM_SCOPE_TEST, &
                                   with_executables=.true., &
                                   with_f_ext=model%packages(1)%preprocess%suffixes,error=error,&
-                                  preprocess=model%packages(1)%preprocess,cache=source_cache)
+                                  preprocess=model%packages(1)%preprocess)
 
         if (allocated(error)) then
             return
@@ -310,7 +264,7 @@ subroutine build_model(model, settings, package_config, error)
         call add_executable_sources(model%packages(1)%sources, package%executable, FPM_SCOPE_APP, &
                                      auto_discover=auto_exe, &
                                      with_f_ext=model%packages(1)%preprocess%suffixes, &
-                                     error=error,preprocess=model%packages(1)%preprocess,cache=source_cache)
+                                     error=error,preprocess=model%packages(1)%preprocess)
 
         if (allocated(error)) then
             return
@@ -321,7 +275,7 @@ subroutine build_model(model, settings, package_config, error)
         call add_executable_sources(model%packages(1)%sources, package%example, FPM_SCOPE_EXAMPLE, &
                                      auto_discover=auto_example, &
                                      with_f_ext=model%packages(1)%preprocess%suffixes, &
-                                     error=error,preprocess=model%packages(1)%preprocess,cache=source_cache)
+                                     error=error,preprocess=model%packages(1)%preprocess)
 
         if (allocated(error)) then
             return
@@ -332,7 +286,7 @@ subroutine build_model(model, settings, package_config, error)
         call add_executable_sources(model%packages(1)%sources, package%test, FPM_SCOPE_TEST, &
                                      auto_discover=auto_test, &
                                      with_f_ext=model%packages(1)%preprocess%suffixes, &
-                                     error=error,preprocess=model%packages(1)%preprocess,cache=source_cache)
+                                     error=error,preprocess=model%packages(1)%preprocess)
 
         if (allocated(error)) then
             return
@@ -362,54 +316,6 @@ subroutine build_model(model, settings, package_config, error)
     if (duplicates_found) then
         call fpm_stop(1,'*build_model*:Error: One or more duplicate module names found.')
     end if
-
-    ! Update cache with all discovered sources and save
-    j = 0
-    do i = 1, size(model%packages)
-        if (allocated(model%packages(i)%sources)) then
-            j = j + size(model%packages(i)%sources)
-        end if
-    end do
-
-    ! Rebuild cache with all current sources
-    source_cache%manifest_hash = manifest_hash
-    source_cache%dep_cache_hash = dep_hash
-    if (allocated(source_cache%sources)) deallocate(source_cache%sources)
-    allocate(source_cache%sources(j))
-
-    ! Populate cache from all package sources
-    j = 0
-    do i = 1, size(model%packages)
-        if (allocated(model%packages(i)%sources)) then
-            do k = 1, size(model%packages(i)%sources)
-                j = j + 1
-                call populate_cache_from_source(source_cache%sources(j), &
-                                                model%packages(i)%sources(k), error)
-                if (allocated(error)) then
-                    if (settings%verbose) then
-                        write(*,'(A)') '<WARN> Failed to cache source: ' // error%message
-                    end if
-                    deallocate(error)
-                    j = j - 1  ! Skip this entry
-                end if
-            end do
-        end if
-    end do
-
-    ! Trim to actual size if some failed
-    if (j < size(source_cache%sources)) then
-        source_cache%sources = source_cache%sources(1:j)
-    end if
-
-    ! Save cache for next build (errors are non-fatal)
-    call save_cache(source_cache, cache_path, error)
-    if (allocated(error)) then
-        if (settings%verbose) then
-            write(*,'(A)') '<WARN> Failed to save source cache: ' // error%message
-        end if
-        deallocate(error)
-    end if
-
 end subroutine build_model
 
 !> Helper: safely get string from either CLI or package, with fallback

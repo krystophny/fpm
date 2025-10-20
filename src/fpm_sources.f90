@@ -12,9 +12,6 @@ use fpm_strings, only: lower, str_ends_with, string_t, operator(.in.), add_strin
 use fpm_source_parsing, only: parse_f_source, parse_c_source
 use fpm_manifest_executable, only: executable_config_t
 use fpm_manifest_preprocess, only: preprocess_config_t
-use fpm_cache, only: fpm_cache_t, find_cached_source, restore_source_from_cache, &
-                     get_file_mtime, hash_file_content
-use iso_fortran_env, only: int64
 implicit none
 
 private
@@ -90,7 +87,7 @@ end subroutine list_fortran_suffixes
 
 !> Add to `sources` by looking for source files in `directory`
 subroutine add_sources_from_dir(sources,directory,scope,with_executables,with_f_ext,recurse,error,&
-                                preprocess,cache)
+                                preprocess)
     !> List of `[[srcfile_t]]` objects to append to. Allocated if not allocated
     type(srcfile_t), allocatable, intent(inout), target :: sources(:)
     !> Directory in which to search for source files
@@ -106,14 +103,11 @@ subroutine add_sources_from_dir(sources,directory,scope,with_executables,with_f_
     !> Error handling
     type(error_t), allocatable, intent(out) :: error
     !> Optional source preprocessor configuration
-    type(preprocess_config_t), optional, intent(in) :: preprocess
-    !> Optional source cache for faster incremental builds
-    type(fpm_cache_t), optional, intent(in) :: cache
+    type(preprocess_config_t), optional, intent(in) :: preprocess    
 
-    integer :: i, cache_idx
-    integer(int64) :: file_mtime_sec, file_mtime_nsec, file_hash
+    integer :: i
     logical, allocatable :: is_source(:), exclude_source(:)
-    logical :: recurse_, from_cache
+    logical :: recurse_
     type(string_t), allocatable :: file_names(:)
     type(string_t), allocatable :: src_file_names(:),f_ext(:)
     type(string_t), allocatable :: existing_src_files(:)
@@ -149,42 +143,11 @@ subroutine add_sources_from_dir(sources,directory,scope,with_executables,with_f_
 
     do i = 1, size(src_file_names)
 
-        from_cache = .false.
-
-        if (present(cache)) then
-            cache_idx = find_cached_source(cache, canon_path(src_file_names(i)%s))
-
-            if (cache_idx > 0) then
-                call get_file_mtime(src_file_names(i)%s, file_mtime_sec, file_mtime_nsec, error)
-                if (allocated(error)) return
-
-                if (file_mtime_sec == cache%sources(cache_idx)%mtime_sec .and. &
-                    file_mtime_nsec == cache%sources(cache_idx)%mtime_nsec) then
-
-                    call restore_source_from_cache(dir_sources(i), cache%sources(cache_idx))
-                    from_cache = .true.
-
-                else
-                    file_hash = hash_file_content(src_file_names(i)%s, error)
-                    if (allocated(error)) return
-
-                    if (file_hash == cache%sources(cache_idx)%content_hash) then
-                        call restore_source_from_cache(dir_sources(i), cache%sources(cache_idx))
-                        from_cache = .true.
-                    end if
-                end if
-            end if
-        end if
-
-        if (.not.from_cache) then
-            dir_sources(i) = parse_source(src_file_names(i)%s,with_f_ext,error,preprocess)
-            if (allocated(error)) return
-        end if
+        dir_sources(i) = parse_source(src_file_names(i)%s,with_f_ext,error,preprocess)
+        if (allocated(error)) return
 
         dir_sources(i)%unit_scope = scope
-        if (.not.allocated(dir_sources(i)%link_libraries)) then
-            allocate(dir_sources(i)%link_libraries(0))
-        end if
+        allocate(dir_sources(i)%link_libraries(0))
 
         ! Exclude executables unless specified otherwise
         exclude_source(i) = (dir_sources(i)%unit_type == FPM_UNIT_PROGRAM)
@@ -211,7 +174,7 @@ end subroutine add_sources_from_dir
 !> Add to `sources` using the executable and test entries in the manifest and
 !> applies any executable-specific overrides such as `executable%name`.
 !> Adds all sources (including modules) from each `executable%source_dir`
-subroutine add_executable_sources(sources,executables,scope,auto_discover,with_f_ext,error,preprocess,cache)
+subroutine add_executable_sources(sources,executables,scope,auto_discover,with_f_ext,error,preprocess)
     !> List of `[[srcfile_t]]` objects to append to. Allocated if not allocated
     type(srcfile_t), allocatable, intent(inout), target :: sources(:)
     !> List of `[[executable_config_t]]` entries from manifest
@@ -226,8 +189,6 @@ subroutine add_executable_sources(sources,executables,scope,auto_discover,with_f
     type(error_t), allocatable, intent(out) :: error
     !> Optional source preprocessor configuration
     type(preprocess_config_t), optional, intent(in) :: preprocess
-    !> Optional source cache for faster incremental builds
-    type(fpm_cache_t), optional, intent(in) :: cache
 
     integer :: i, j
 
@@ -239,7 +200,7 @@ subroutine add_executable_sources(sources,executables,scope,auto_discover,with_f
     do i=1,size(exe_dirs)
         call add_sources_from_dir(sources,exe_dirs(i)%s, scope, &
                      with_executables=auto_discover, with_f_ext=with_f_ext,recurse=.false., &
-                     error=error, preprocess=preprocess, cache=cache)
+                     error=error, preprocess=preprocess)
 
         if (allocated(error)) then
             return
