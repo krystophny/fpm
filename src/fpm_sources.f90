@@ -14,7 +14,6 @@ use fpm_strings, only: lower, str_ends_with, string_t, operator(.in.), add_strin
 use fpm_source_parsing, only: parse_f_source, parse_c_source
 use fpm_manifest_executable, only: executable_config_t
 use fpm_manifest_preprocess, only: preprocess_config_t
-use fpm_toml, only: toml_table, toml_error, new_table, toml_serialize, toml_load
 implicit none
 
 private
@@ -411,7 +410,7 @@ pure subroutine add_srcfile_many(list,new)
 
 end subroutine add_srcfile_many
 
-!> Get cache file path for a source file
+!> Get cache file path for a source file (binary format, faster than TOML)
 function get_cache_path(build_dir, source_file) result(cache_path)
     character(*), intent(in) :: build_dir
     character(*), intent(in) :: source_file
@@ -422,18 +421,17 @@ function get_cache_path(build_dir, source_file) result(cache_path)
 
     sanitized_name = canon_path(source_file)
     sanitized_name = replace(sanitized_name, ['/', '\', ':'], '_')
-    cache_path = join_path(build_dir, join_path('cache', join_path('sources', sanitized_name // '.toml')))
+    cache_path = join_path(build_dir, join_path('cache', join_path('sources', sanitized_name // '.cache')))
 
 end function get_cache_path
 
-!> Save srcfile_t to cache file
+!> Save srcfile_t to binary cache file (fast unformatted I/O)
 subroutine save_srcfile_to_cache(cache_file, source, error)
     character(*), intent(in) :: cache_file
     type(srcfile_t), intent(inout) :: source
     type(error_t), allocatable, intent(out) :: error
 
-    type(toml_table) :: table
-    integer :: unit, iostat
+    integer :: unit, iostat, i, n
     character(:), allocatable :: cache_dir
 
     cache_dir = dirname(cache_file)
@@ -441,43 +439,160 @@ subroutine save_srcfile_to_cache(cache_file, source, error)
         call mkdir(cache_dir)
     end if
 
-    call new_table(table)
-    call source%dump_to_toml(table, error)
-    if (allocated(error)) return
-
-    open(newunit=unit, file=cache_file, status='replace', action='write', iostat=iostat)
+    open(newunit=unit, file=cache_file, status='replace', action='write', &
+         form='unformatted', access='stream', iostat=iostat)
     if (iostat /= 0) then
         call fatal_error(error, "Cannot write cache file: " // cache_file)
         return
     end if
 
-    write(unit, '(a)') toml_serialize(table)
+    ! Write file_name
+    n = len(source%file_name)
+    write(unit, iostat=iostat) n
+    if (iostat /= 0) goto 999
+    write(unit, iostat=iostat) source%file_name
+    if (iostat /= 0) goto 999
+
+    ! Write exe_name (optional)
+    if (allocated(source%exe_name)) then
+        write(unit, iostat=iostat) .true., len(source%exe_name), source%exe_name
+    else
+        write(unit, iostat=iostat) .false.
+    end if
+    if (iostat /= 0) goto 999
+
+    ! Write scalars
+    write(unit, iostat=iostat) source%unit_scope, source%unit_type, source%digest, &
+                                source%mtime_sec, source%mtime_nsec
+    if (iostat /= 0) goto 999
+
+    ! Write string arrays (modules_provided, parent_modules, modules_used, include_dependencies, link_libraries)
+    call write_string_array(unit, source%modules_provided, iostat)
+    if (iostat /= 0) goto 999
+    call write_string_array(unit, source%parent_modules, iostat)
+    if (iostat /= 0) goto 999
+    call write_string_array(unit, source%modules_used, iostat)
+    if (iostat /= 0) goto 999
+    call write_string_array(unit, source%include_dependencies, iostat)
+    if (iostat /= 0) goto 999
+    call write_string_array(unit, source%link_libraries, iostat)
+    if (iostat /= 0) goto 999
+
     close(unit)
+    return
+
+999 close(unit)
+    call fatal_error(error, "Error writing cache file: " // cache_file)
 
 end subroutine save_srcfile_to_cache
 
-!> Load srcfile_t from cache file
+!> Load srcfile_t from binary cache file (fast unformatted I/O)
 subroutine load_srcfile_from_cache(cache_file, source, error)
     character(*), intent(in) :: cache_file
     type(srcfile_t), intent(out) :: source
     type(error_t), allocatable, intent(out) :: error
 
-    type(toml_table), allocatable :: table
-    type(toml_error), allocatable :: parse_error
+    integer :: unit, iostat, n
+    logical :: has_exe_name
 
     if (.not. exists(cache_file)) then
         call fatal_error(error, "Cache file does not exist: " // cache_file)
         return
     end if
 
-    call toml_load(table, cache_file, error=parse_error)
-    if (allocated(parse_error)) then
-        call fatal_error(error, "Invalid TOML in cache file: " // parse_error%message)
+    open(newunit=unit, file=cache_file, status='old', action='read', &
+         form='unformatted', access='stream', iostat=iostat)
+    if (iostat /= 0) then
+        call fatal_error(error, "Cannot open cache file: " // cache_file)
         return
     end if
 
-    call source%load_from_toml(table, error)
+    ! Read file_name
+    read(unit, iostat=iostat) n
+    if (iostat /= 0) goto 999
+    allocate(character(len=n) :: source%file_name)
+    read(unit, iostat=iostat) source%file_name
+    if (iostat /= 0) goto 999
+
+    ! Read exe_name (optional)
+    read(unit, iostat=iostat) has_exe_name
+    if (iostat /= 0) goto 999
+    if (has_exe_name) then
+        read(unit, iostat=iostat) n
+        if (iostat /= 0) goto 999
+        allocate(character(len=n) :: source%exe_name)
+        read(unit, iostat=iostat) source%exe_name
+        if (iostat /= 0) goto 999
+    end if
+
+    ! Read scalars
+    read(unit, iostat=iostat) source%unit_scope, source%unit_type, source%digest, &
+                               source%mtime_sec, source%mtime_nsec
+    if (iostat /= 0) goto 999
+
+    ! Read string arrays
+    call read_string_array(unit, source%modules_provided, iostat)
+    if (iostat /= 0) goto 999
+    call read_string_array(unit, source%parent_modules, iostat)
+    if (iostat /= 0) goto 999
+    call read_string_array(unit, source%modules_used, iostat)
+    if (iostat /= 0) goto 999
+    call read_string_array(unit, source%include_dependencies, iostat)
+    if (iostat /= 0) goto 999
+    call read_string_array(unit, source%link_libraries, iostat)
+    if (iostat /= 0) goto 999
+
+    close(unit)
+    return
+
+999 close(unit)
+    call fatal_error(error, "Error reading cache file: " // cache_file)
 
 end subroutine load_srcfile_from_cache
+
+!> Helper: write string_t array to unformatted file
+subroutine write_string_array(unit, arr, iostat)
+    integer, intent(in) :: unit
+    type(string_t), allocatable, intent(in) :: arr(:)
+    integer, intent(out) :: iostat
+    integer :: i, n
+
+    if (allocated(arr)) then
+        n = size(arr)
+        write(unit, iostat=iostat) .true., n
+        if (iostat /= 0) return
+        do i = 1, n
+            write(unit, iostat=iostat) len(arr(i)%s), arr(i)%s
+            if (iostat /= 0) return
+        end do
+    else
+        write(unit, iostat=iostat) .false.
+    end if
+end subroutine write_string_array
+
+!> Helper: read string_t array from unformatted file
+subroutine read_string_array(unit, arr, iostat)
+    integer, intent(in) :: unit
+    type(string_t), allocatable, intent(out) :: arr(:)
+    integer, intent(out) :: iostat
+    integer :: i, n, slen
+    logical :: is_allocated
+
+    read(unit, iostat=iostat) is_allocated
+    if (iostat /= 0) return
+
+    if (is_allocated) then
+        read(unit, iostat=iostat) n
+        if (iostat /= 0) return
+        allocate(arr(n))
+        do i = 1, n
+            read(unit, iostat=iostat) slen
+            if (iostat /= 0) return
+            allocate(character(len=slen) :: arr(i)%s)
+            read(unit, iostat=iostat) arr(i)%s
+            if (iostat /= 0) return
+        end do
+    end if
+end subroutine read_string_array
 
 end module fpm_sources
