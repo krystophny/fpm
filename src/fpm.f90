@@ -15,8 +15,8 @@ use fpm_model, only: fpm_model_t, srcfile_t, show_model, &
 use fpm_compiler, only: new_compiler, new_archiver, set_cpp_preprocessor_flags, &
                         id_intel_classic_nix,id_intel_classic_mac,id_intel_llvm_nix, &
                         id_intel_llvm_unknown
-use fpm_cache, only: fpm_cache_t, new_cache, load_cache, save_cache, cache_is_valid, &
-                     hash_file_content
+use fpm_cache, only: fpm_cache_t, source_cache_t, new_cache, load_cache, save_cache, cache_is_valid, &
+                     hash_file_content, populate_cache_from_source
 use iso_fortran_env, only: int64
 
 
@@ -49,7 +49,7 @@ subroutine build_model(model, settings, package_config, error)
     type(package_config_t), intent(inout), target :: package_config
     type(error_t), allocatable, intent(out) :: error
 
-    integer :: i, j
+    integer :: i, j, k
     type(package_config_t), allocatable, target  :: package, dependency_config, dependency
     type(package_config_t), pointer :: manifest
     type(platform_config_t), allocatable, target :: target_platform
@@ -344,8 +344,42 @@ subroutine build_model(model, settings, package_config, error)
         end if
     end if
 
-    ! Create new cache (MVP: just save current state)
+    ! Count total sources across all packages
+    j = 0
+    do i = 1, size(model%packages)
+        if (allocated(model%packages(i)%sources)) then
+            j = j + size(model%packages(i)%sources)
+        end if
+    end do
+
+    ! Create new cache with proper size
     call new_cache(source_cache, manifest_hash, dep_hash)
+    deallocate(source_cache%sources)
+    allocate(source_cache%sources(j))
+
+    ! Populate cache from all package sources
+    j = 0
+    do i = 1, size(model%packages)
+        if (allocated(model%packages(i)%sources)) then
+            do k = 1, size(model%packages(i)%sources)
+                j = j + 1
+                call populate_cache_from_source(source_cache%sources(j), &
+                                                model%packages(i)%sources(k), error)
+                if (allocated(error)) then
+                    if (settings%verbose) then
+                        write(*,'(A)') '<WARN> Failed to cache source: ' // error%message
+                    end if
+                    deallocate(error)
+                    j = j - 1  ! Skip this entry
+                end if
+            end do
+        end if
+    end do
+
+    ! Trim to actual size if some failed
+    if (j < size(source_cache%sources)) then
+        source_cache%sources = source_cache%sources(1:j)
+    end if
 
     ! Save cache for next build (errors are non-fatal)
     call save_cache(source_cache, cache_path, error)

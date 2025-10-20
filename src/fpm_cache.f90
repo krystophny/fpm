@@ -25,6 +25,7 @@ use fpm_model, only: srcfile_t, fpm_model_t, package_t
 use fpm_toml, only: toml_table, toml_array, toml_stat, get_value, set_value, &
                    get_list, set_list, add_table, toml_key, toml_error, &
                    toml_serialize, new_table, add_array, len, toml_load
+use tomlf, only: toml_value
 implicit none
 
 private
@@ -337,8 +338,39 @@ subroutine load_cache(cache, cache_path, error)
     call get_value(table, "manifest-hash", cache%manifest_hash)
     call get_value(table, "dep-cache-hash", cache%dep_cache_hash)
 
-    ! TODO: Read sources array (MVP: metadata only for now)
-    allocate(cache%sources(0))
+    ! Deserialize sources array
+    call get_value(table, "source", array)
+    if (.not. associated(array)) then
+        allocate(cache%sources(0))
+        return
+    end if
+
+    allocate(cache%sources(len(array)))
+
+    do i = 1, len(array)
+        call get_value(array, i, child)
+        if (.not. associated(child)) cycle
+
+        call get_value(child, "file-name", cache%sources(i)%file_name)
+        call get_value(child, "mtime-sec", cache%sources(i)%mtime_sec)
+        call get_value(child, "mtime-nsec", cache%sources(i)%mtime_nsec)
+        call get_value(child, "content-hash", cache%sources(i)%content_hash)
+        call get_value(child, "unit-type", cache%sources(i)%unit_type)
+        call get_value(child, "unit-scope", cache%sources(i)%unit_scope)
+
+        call get_list(child, "modules-provided", cache%sources(i)%modules_provided, error)
+        if (allocated(error)) return
+
+        call get_list(child, "parent-modules", cache%sources(i)%parent_modules, error)
+        if (allocated(error)) return
+
+        call get_list(child, "modules-used", cache%sources(i)%modules_used, error)
+        if (allocated(error)) return
+
+        call get_list(child, "include-dependencies", &
+                     cache%sources(i)%include_dependencies, error)
+        if (allocated(error)) return
+    end do
 
 end subroutine load_cache
 
@@ -348,9 +380,11 @@ subroutine save_cache(cache, cache_path, error)
     character(*), intent(in) :: cache_path
     type(error_t), allocatable, intent(out) :: error
 
-    type(toml_table) :: table, src_table
+    type(toml_table) :: table
+    type(toml_table), allocatable :: child_table
+    class(toml_value), allocatable :: child
     type(toml_array), pointer :: src_array
-    integer :: unit, iostat, i
+    integer :: unit, iostat, i, stat
 
     ! Create cache directory if needed
     if (.not. exists(dirname(cache_path))) then
@@ -363,8 +397,46 @@ subroutine save_cache(cache, cache_path, error)
     call set_value(table, "manifest-hash", cache%manifest_hash)
     call set_value(table, "dep-cache-hash", cache%dep_cache_hash)
 
-    ! TODO: Serialize sources array (MVP: metadata only for now)
-    ! Array serialization requires understanding fpm's TOML patterns better
+    ! Serialize sources array
+    if (size(cache%sources) > 0) then
+        call add_array(table, "source", src_array)
+        if (.not. associated(src_array)) then
+            call fatal_error(error, "Cache: Cannot create source array")
+            return
+        end if
+
+        do i = 1, size(cache%sources)
+            allocate(child_table)
+            call new_table(child_table)
+
+            call set_value(child_table, "file-name", cache%sources(i)%file_name)
+            call set_value(child_table, "mtime-sec", cache%sources(i)%mtime_sec)
+            call set_value(child_table, "mtime-nsec", cache%sources(i)%mtime_nsec)
+            call set_value(child_table, "content-hash", cache%sources(i)%content_hash)
+            call set_value(child_table, "unit-type", cache%sources(i)%unit_type)
+            call set_value(child_table, "unit-scope", cache%sources(i)%unit_scope)
+
+            call set_list(child_table, "modules-provided", cache%sources(i)%modules_provided, error)
+            if (allocated(error)) return
+
+            call set_list(child_table, "parent-modules", cache%sources(i)%parent_modules, error)
+            if (allocated(error)) return
+
+            call set_list(child_table, "modules-used", cache%sources(i)%modules_used, error)
+            if (allocated(error)) return
+
+            call set_list(child_table, "include-dependencies", &
+                         cache%sources(i)%include_dependencies, error)
+            if (allocated(error)) return
+
+            call move_alloc(child_table, child)
+            call src_array%push_back(child, stat)
+            if (stat /= toml_stat%success) then
+                call fatal_error(error, "Cache: Cannot append source table to array")
+                return
+            end if
+        end do
+    end if
 
     ! Serialize to file
     open(newunit=unit, file=cache_path, status='replace', action='write', iostat=iostat)
@@ -416,33 +488,21 @@ subroutine populate_cache_from_source(cache_entry, source, error)
                        cache_entry%mtime_nsec, error)
     if (allocated(error)) return
 
-    ! Copy module information
+    ! Copy module information (note: intent(out) deallocates, so safe to allocate)
     if (allocated(source%modules_provided)) then
-        allocate(cache_entry%modules_provided(size(source%modules_provided)))
         cache_entry%modules_provided = source%modules_provided
-    else
-        allocate(cache_entry%modules_provided(0))
     end if
 
     if (allocated(source%parent_modules)) then
-        allocate(cache_entry%parent_modules(size(source%parent_modules)))
         cache_entry%parent_modules = source%parent_modules
-    else
-        allocate(cache_entry%parent_modules(0))
     end if
 
     if (allocated(source%modules_used)) then
-        allocate(cache_entry%modules_used(size(source%modules_used)))
         cache_entry%modules_used = source%modules_used
-    else
-        allocate(cache_entry%modules_used(0))
     end if
 
     if (allocated(source%include_dependencies)) then
-        allocate(cache_entry%include_dependencies(size(source%include_dependencies)))
         cache_entry%include_dependencies = source%include_dependencies
-    else
-        allocate(cache_entry%include_dependencies(0))
     end if
 
 end subroutine populate_cache_from_source
