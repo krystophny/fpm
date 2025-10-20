@@ -29,3 +29,23 @@ struct dirent *c_readdir(DIR *dirp)
 {
     return readdir(dirp);
 }
+
+int c_get_mtime(const char *path, long *sec, long *nsec)
+{
+    struct stat m;
+    int r = stat(path, &m);
+    if (r != 0) {
+        *sec = 0;
+        *nsec = 0;
+        return r;
+    }
+    *sec = (long)m.st_mtime;
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
+    *nsec = (long)m.st_mtimespec.tv_nsec;
+#elif defined(_WIN32)
+    *nsec = 0;
+#else
+    *nsec = (long)m.st_mtim.tv_nsec;
+#endif
+    return 0;
+}
