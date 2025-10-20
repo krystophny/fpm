@@ -518,6 +518,7 @@ subroutine restore_source_from_cache(source, cache_entry)
     source%file_name = cache_entry%file_name
     source%unit_type = cache_entry%unit_type
     source%unit_scope = cache_entry%unit_scope
+    source%digest = cache_entry%content_hash
 
     ! Initialize link_libraries (not cached, will be set by caller)
     if (allocated(source%link_libraries)) deallocate(source%link_libraries)
