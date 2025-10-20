@@ -125,9 +125,49 @@ subroutine build_model(model, settings, package_config, error)
     end if
 
     allocate(model%packages(model%deps%ndep))
-    
-    ! The current configuration may not have preprocessing, but some of its features may. 
-    ! This means there will be directives that need to be considered even if not currently 
+
+    ! Initialize and load source cache before discovering sources
+    cache_path = join_path(settings%build_dir, "cache", "sources.toml")
+    manifest_path = join_path(settings%path_to_config, "fpm.toml")
+    dep_cache_path = join_path(settings%build_dir, "cache.toml")
+
+    ! Compute manifest hashes
+    manifest_hash = hash_file_content(manifest_path, error)
+    if (allocated(error)) then
+        deallocate(error)  ! Non-fatal: cache is optional
+        manifest_hash = 0_int64
+    end if
+
+    dep_hash = 0_int64
+    if (exists(dep_cache_path)) then
+        dep_hash = hash_file_content(dep_cache_path, error)
+        if (allocated(error)) then
+            deallocate(error)  ! Non-fatal
+            dep_hash = 0_int64
+        end if
+    end if
+
+    ! Load existing cache if valid
+    if (exists(cache_path)) then
+        call load_cache(source_cache, cache_path, error)
+        if (allocated(error)) then
+            if (settings%verbose) then
+                write(*,'(A)') '<WARN> Failed to load cache: ' // error%message
+            end if
+            deallocate(error)
+            call new_cache(source_cache, manifest_hash, dep_hash)
+        else if (.not.cache_is_valid(source_cache, manifest_path, dep_cache_path)) then
+            if (settings%verbose) then
+                write(*,'(A)') '<INFO> Cache invalidated (manifest or dependencies changed)'
+            end if
+            call new_cache(source_cache, manifest_hash, dep_hash)
+        end if
+    else
+        call new_cache(source_cache, manifest_hash, dep_hash)
+    end if
+
+    ! The current configuration may not have preprocessing, but some of its features may.
+    ! This means there will be directives that need to be considered even if not currently
     ! active. Turn preprocessing on even in this case
     has_cpp = package_config%has_cpp() .or. package%has_cpp()
 
@@ -183,7 +223,7 @@ subroutine build_model(model, settings, package_config, error)
                     if (is_dir(lib_dir)) then
                         call add_sources_from_dir(model%packages(i)%sources, lib_dir, FPM_SCOPE_LIB, &
                             with_f_ext=model%packages(i)%preprocess%suffixes, error=error, &
-                            preprocess=model%packages(i)%preprocess)
+                            preprocess=model%packages(i)%preprocess, cache=source_cache)
                         if (allocated(error)) exit
                     end if
                 end if
@@ -237,7 +277,7 @@ subroutine build_model(model, settings, package_config, error)
     if (is_dir('app') .and. auto_exe) then
         call add_sources_from_dir(model%packages(1)%sources,'app', FPM_SCOPE_APP, &
                                    with_executables=.true., with_f_ext=model%packages(1)%preprocess%suffixes,&
-                                   error=error,preprocess=model%packages(1)%preprocess)
+                                   error=error,preprocess=model%packages(1)%preprocess,cache=source_cache)
 
         if (allocated(error)) then
             return
@@ -248,7 +288,7 @@ subroutine build_model(model, settings, package_config, error)
         call add_sources_from_dir(model%packages(1)%sources,'example', FPM_SCOPE_EXAMPLE, &
                                   with_executables=.true., &
                                   with_f_ext=model%packages(1)%preprocess%suffixes,error=error,&
-                                  preprocess=model%packages(1)%preprocess)
+                                  preprocess=model%packages(1)%preprocess,cache=source_cache)
 
         if (allocated(error)) then
             return
@@ -259,7 +299,7 @@ subroutine build_model(model, settings, package_config, error)
         call add_sources_from_dir(model%packages(1)%sources,'test', FPM_SCOPE_TEST, &
                                   with_executables=.true., &
                                   with_f_ext=model%packages(1)%preprocess%suffixes,error=error,&
-                                  preprocess=model%packages(1)%preprocess)
+                                  preprocess=model%packages(1)%preprocess,cache=source_cache)
 
         if (allocated(error)) then
             return
@@ -270,7 +310,7 @@ subroutine build_model(model, settings, package_config, error)
         call add_executable_sources(model%packages(1)%sources, package%executable, FPM_SCOPE_APP, &
                                      auto_discover=auto_exe, &
                                      with_f_ext=model%packages(1)%preprocess%suffixes, &
-                                     error=error,preprocess=model%packages(1)%preprocess)
+                                     error=error,preprocess=model%packages(1)%preprocess,cache=source_cache)
 
         if (allocated(error)) then
             return
@@ -281,7 +321,7 @@ subroutine build_model(model, settings, package_config, error)
         call add_executable_sources(model%packages(1)%sources, package%example, FPM_SCOPE_EXAMPLE, &
                                      auto_discover=auto_example, &
                                      with_f_ext=model%packages(1)%preprocess%suffixes, &
-                                     error=error,preprocess=model%packages(1)%preprocess)
+                                     error=error,preprocess=model%packages(1)%preprocess,cache=source_cache)
 
         if (allocated(error)) then
             return
@@ -292,7 +332,7 @@ subroutine build_model(model, settings, package_config, error)
         call add_executable_sources(model%packages(1)%sources, package%test, FPM_SCOPE_TEST, &
                                      auto_discover=auto_test, &
                                      with_f_ext=model%packages(1)%preprocess%suffixes, &
-                                     error=error,preprocess=model%packages(1)%preprocess)
+                                     error=error,preprocess=model%packages(1)%preprocess,cache=source_cache)
 
         if (allocated(error)) then
             return
@@ -323,28 +363,7 @@ subroutine build_model(model, settings, package_config, error)
         call fpm_stop(1,'*build_model*:Error: One or more duplicate module names found.')
     end if
 
-    ! Initialize source cache (MVP: save only, no restore yet)
-    cache_path = join_path(settings%build_dir, "cache", "sources.toml")
-    manifest_path = join_path(settings%path_to_config, "fpm.toml")
-    dep_cache_path = join_path(settings%build_dir, "cache.toml")
-
-    ! Compute manifest hashes
-    manifest_hash = hash_file_content(manifest_path, error)
-    if (allocated(error)) then
-        deallocate(error)  ! Non-fatal: cache is optional
-        manifest_hash = 0_int64
-    end if
-
-    dep_hash = 0_int64
-    if (exists(dep_cache_path)) then
-        dep_hash = hash_file_content(dep_cache_path, error)
-        if (allocated(error)) then
-            deallocate(error)  ! Non-fatal
-            dep_hash = 0_int64
-        end if
-    end if
-
-    ! Count total sources across all packages
+    ! Update cache with all discovered sources and save
     j = 0
     do i = 1, size(model%packages)
         if (allocated(model%packages(i)%sources)) then
@@ -352,9 +371,10 @@ subroutine build_model(model, settings, package_config, error)
         end if
     end do
 
-    ! Create new cache with proper size
-    call new_cache(source_cache, manifest_hash, dep_hash)
-    deallocate(source_cache%sources)
+    ! Rebuild cache with all current sources
+    source_cache%manifest_hash = manifest_hash
+    source_cache%dep_cache_hash = dep_hash
+    if (allocated(source_cache%sources)) deallocate(source_cache%sources)
     allocate(source_cache%sources(j))
 
     ! Populate cache from all package sources

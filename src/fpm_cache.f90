@@ -31,7 +31,7 @@ implicit none
 private
 public :: source_cache_t, fpm_cache_t
 public :: new_cache, load_cache, save_cache, cache_is_valid, incremental_check
-public :: hash_file_content
+public :: hash_file_content, get_file_mtime
 public :: populate_cache_from_source, restore_source_from_cache, find_cached_source
 
 !> Per-file cache entry
@@ -509,7 +509,7 @@ end subroutine populate_cache_from_source
 
 !> Restore source file from cache entry (without reparsing)
 subroutine restore_source_from_cache(source, cache_entry)
-    type(srcfile_t), intent(out) :: source
+    type(srcfile_t), intent(inout) :: source
     type(source_cache_t), intent(in) :: cache_entry
 
     integer :: i
@@ -519,26 +519,27 @@ subroutine restore_source_from_cache(source, cache_entry)
     source%unit_scope = cache_entry%unit_scope
 
     ! Initialize link_libraries (not cached, will be set by caller)
+    if (allocated(source%link_libraries)) deallocate(source%link_libraries)
     allocate(source%link_libraries(0))
 
     ! Restore module information
+    if (allocated(source%modules_provided)) deallocate(source%modules_provided)
     if (allocated(cache_entry%modules_provided)) then
-        allocate(source%modules_provided(size(cache_entry%modules_provided)))
         source%modules_provided = cache_entry%modules_provided
     end if
 
+    if (allocated(source%parent_modules)) deallocate(source%parent_modules)
     if (allocated(cache_entry%parent_modules)) then
-        allocate(source%parent_modules(size(cache_entry%parent_modules)))
         source%parent_modules = cache_entry%parent_modules
     end if
 
+    if (allocated(source%modules_used)) deallocate(source%modules_used)
     if (allocated(cache_entry%modules_used)) then
-        allocate(source%modules_used(size(cache_entry%modules_used)))
         source%modules_used = cache_entry%modules_used
     end if
 
+    if (allocated(source%include_dependencies)) deallocate(source%include_dependencies)
     if (allocated(cache_entry%include_dependencies)) then
-        allocate(source%include_dependencies(size(cache_entry%include_dependencies)))
         source%include_dependencies = cache_entry%include_dependencies
     end if
 
