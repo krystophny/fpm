@@ -32,6 +32,7 @@ private
 public :: source_cache_t, fpm_cache_t
 public :: new_cache, load_cache, save_cache, cache_is_valid, incremental_check
 public :: hash_file_content
+public :: populate_cache_from_source, restore_source_from_cache, find_cached_source
 
 !> Per-file cache entry
 type :: source_cache_t
@@ -439,5 +440,111 @@ subroutine save_cache(cache, cache_path, error)
     close(unit)
 
 end subroutine save_cache
+
+!> Find cached source entry by file name
+function find_cached_source(cache, file_name) result(idx)
+    type(fpm_cache_t), intent(in) :: cache
+    character(*), intent(in) :: file_name
+    integer :: idx
+
+    integer :: i
+
+    idx = 0
+    do i = 1, size(cache%sources)
+        if (cache%sources(i)%file_name == file_name) then
+            idx = i
+            return
+        end if
+    end do
+
+end function find_cached_source
+
+!> Populate cache entry from parsed source file
+subroutine populate_cache_from_source(cache_entry, source, error)
+    type(source_cache_t), intent(out) :: cache_entry
+    type(srcfile_t), intent(in) :: source
+    type(error_t), allocatable, intent(out) :: error
+
+    integer :: i
+
+    cache_entry%file_name = source%file_name
+    cache_entry%unit_type = source%unit_type
+    cache_entry%unit_scope = source%unit_scope
+
+    ! Hash content and get mtime
+    cache_entry%content_hash = hash_file_content(source%file_name, error)
+    if (allocated(error)) return
+
+    call get_file_mtime(source%file_name, cache_entry%mtime_sec, &
+                       cache_entry%mtime_nsec, error)
+    if (allocated(error)) return
+
+    ! Copy module information
+    if (allocated(source%modules_provided)) then
+        allocate(cache_entry%modules_provided(size(source%modules_provided)))
+        cache_entry%modules_provided = source%modules_provided
+    else
+        allocate(cache_entry%modules_provided(0))
+    end if
+
+    if (allocated(source%parent_modules)) then
+        allocate(cache_entry%parent_modules(size(source%parent_modules)))
+        cache_entry%parent_modules = source%parent_modules
+    else
+        allocate(cache_entry%parent_modules(0))
+    end if
+
+    if (allocated(source%modules_used)) then
+        allocate(cache_entry%modules_used(size(source%modules_used)))
+        cache_entry%modules_used = source%modules_used
+    else
+        allocate(cache_entry%modules_used(0))
+    end if
+
+    if (allocated(source%include_dependencies)) then
+        allocate(cache_entry%include_dependencies(size(source%include_dependencies)))
+        cache_entry%include_dependencies = source%include_dependencies
+    else
+        allocate(cache_entry%include_dependencies(0))
+    end if
+
+end subroutine populate_cache_from_source
+
+!> Restore source file from cache entry (without reparsing)
+subroutine restore_source_from_cache(source, cache_entry)
+    type(srcfile_t), intent(out) :: source
+    type(source_cache_t), intent(in) :: cache_entry
+
+    integer :: i
+
+    source%file_name = cache_entry%file_name
+    source%unit_type = cache_entry%unit_type
+    source%unit_scope = cache_entry%unit_scope
+
+    ! Initialize link_libraries (not cached, will be set by caller)
+    allocate(source%link_libraries(0))
+
+    ! Restore module information
+    if (allocated(cache_entry%modules_provided)) then
+        allocate(source%modules_provided(size(cache_entry%modules_provided)))
+        source%modules_provided = cache_entry%modules_provided
+    end if
+
+    if (allocated(cache_entry%parent_modules)) then
+        allocate(source%parent_modules(size(cache_entry%parent_modules)))
+        source%parent_modules = cache_entry%parent_modules
+    end if
+
+    if (allocated(cache_entry%modules_used)) then
+        allocate(source%modules_used(size(cache_entry%modules_used)))
+        source%modules_used = cache_entry%modules_used
+    end if
+
+    if (allocated(cache_entry%include_dependencies)) then
+        allocate(source%include_dependencies(size(cache_entry%include_dependencies)))
+        source%include_dependencies = cache_entry%include_dependencies
+    end if
+
+end subroutine restore_source_from_cache
 
 end module fpm_cache
