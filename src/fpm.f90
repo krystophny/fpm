@@ -1,7 +1,7 @@
 module fpm
 use fpm_strings, only: string_t, operator(.in.), glob, join, string_cat, &
                       lower, str_ends_with, is_fortran_name, str_begins_with_str, &
-                      is_valid_module_name, len_trim
+                      is_valid_module_name, len_trim, fnv_1a
 use fpm_backend, only: build_package
 use fpm_command_line, only: fpm_build_settings, fpm_new_settings, &
                       fpm_run_settings, fpm_install_settings, fpm_test_settings, &
@@ -15,6 +15,9 @@ use fpm_model, only: fpm_model_t, srcfile_t, show_model, &
 use fpm_compiler, only: new_compiler, new_archiver, set_cpp_preprocessor_flags, &
                         id_intel_classic_nix,id_intel_classic_mac,id_intel_llvm_nix, &
                         id_intel_llvm_unknown
+use fpm_cache, only: fpm_cache_t, new_cache, load_cache, save_cache, cache_is_valid, &
+                     hash_file_content
+use iso_fortran_env, only: int64
 
 
 use fpm_sources, only: add_executable_sources, add_sources_from_dir
@@ -54,6 +57,9 @@ subroutine build_model(model, settings, package_config, error)
     logical :: has_cpp
     logical :: duplicates_found, auto_exe, auto_example, auto_test
     type(string_t) :: include_dir
+    type(fpm_cache_t) :: source_cache
+    character(len=:), allocatable :: cache_path, manifest_path, dep_cache_path
+    integer(int64) :: manifest_hash, dep_hash
     
     ! Large variables -> safer on heap
     allocate(package,dependency_config,dependency,target_platform)
@@ -316,6 +322,40 @@ subroutine build_model(model, settings, package_config, error)
     if (duplicates_found) then
         call fpm_stop(1,'*build_model*:Error: One or more duplicate module names found.')
     end if
+
+    ! Initialize source cache (MVP: save only, no restore yet)
+    cache_path = join_path(settings%build_dir, "cache", "sources.toml")
+    manifest_path = join_path(settings%path_to_config, "fpm.toml")
+    dep_cache_path = join_path(settings%build_dir, "cache.toml")
+
+    ! Compute manifest hashes
+    manifest_hash = hash_file_content(manifest_path, error)
+    if (allocated(error)) then
+        deallocate(error)  ! Non-fatal: cache is optional
+        manifest_hash = 0_int64
+    end if
+
+    dep_hash = 0_int64
+    if (exists(dep_cache_path)) then
+        dep_hash = hash_file_content(dep_cache_path, error)
+        if (allocated(error)) then
+            deallocate(error)  ! Non-fatal
+            dep_hash = 0_int64
+        end if
+    end if
+
+    ! Create new cache (MVP: just save current state)
+    call new_cache(source_cache, manifest_hash, dep_hash)
+
+    ! Save cache for next build (errors are non-fatal)
+    call save_cache(source_cache, cache_path, error)
+    if (allocated(error)) then
+        if (settings%verbose) then
+            write(*,'(A)') '<WARN> Failed to save source cache: ' // error%message
+        end if
+        deallocate(error)
+    end if
+
 end subroutine build_model
 
 !> Helper: safely get string from either CLI or package, with fallback
