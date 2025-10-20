@@ -122,6 +122,12 @@ type, extends(serializable_t) :: srcfile_t
     !> Current hash
     integer(int64) :: digest
 
+    !> Modification time for cache validation (seconds since epoch)
+    integer(int64) :: mtime_sec = 0_int64
+
+    !> Modification time for cache validation (nanoseconds part)
+    integer(int64) :: mtime_nsec = 0_int64
+
     contains
 
         !> Serialization interface
@@ -560,6 +566,10 @@ subroutine srcfile_dump_to_toml(self, table, error)
     if (allocated(error)) return
     call set_list(table, "link-libraries",self%link_libraries, error)
     if (allocated(error)) return
+    call set_value(table, "mtime-sec", self%mtime_sec, error, 'srcfile_t')
+    if (allocated(error)) return
+    call set_value(table, "mtime-nsec", self%mtime_nsec, error, 'srcfile_t')
+    if (allocated(error)) return
 
 end subroutine srcfile_dump_to_toml
 
@@ -604,6 +614,9 @@ subroutine srcfile_load_from_toml(self, table, error)
 
     call get_list(table,"link-libraries",self%link_libraries, error)
     if (allocated(error)) return
+
+    call get_value(table, "mtime-sec", self%mtime_sec)
+    call get_value(table, "mtime-nsec", self%mtime_nsec)
 
 end subroutine srcfile_load_from_toml
 

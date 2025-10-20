@@ -1,7 +1,7 @@
 !> This module contains general routines for interacting with the file system
 !!
 module fpm_filesystem
-    use,intrinsic :: iso_fortran_env, only : stdin=>input_unit, stdout=>output_unit, stderr=>error_unit
+    use,intrinsic :: iso_fortran_env, only : stdin=>input_unit, stdout=>output_unit, stderr=>error_unit, int64
     use,intrinsic :: iso_c_binding, only: c_new_line
     use fpm_environment, only: get_os_type, &
                                OS_UNKNOWN, OS_LINUX, OS_MACOS, OS_WINDOWS, &
@@ -9,14 +9,14 @@ module fpm_filesystem
     use fpm_environment, only: separator, get_env, os_is_unix
     use fpm_strings, only: f_string, replace, string_t, split, split_lines_first_last, dilate, add_strings, &
         str_begins_with_str
-    use iso_c_binding, only: c_char, c_ptr, c_int, c_null_char, c_associated, c_f_pointer
+    use iso_c_binding, only: c_char, c_ptr, c_int, c_null_char, c_associated, c_f_pointer, c_long
     use fpm_error, only : fpm_stop, error_t, fatal_error
     implicit none
     private
     public :: basename, canon_path, dirname, is_dir, join_path, number_of_rows, list_files, get_local_prefix, &
             mkdir, exists, get_temp_filename, windows_path, unix_path, getline, delete_file, fileopen, fileclose, &
             filewrite, warnwrite, parent_dir, is_hidden_file, read_lines, read_lines_expanded, which, run, &
-            os_delete_dir, is_absolute_path, get_home, execute_and_read_output, get_dos_path
+            os_delete_dir, is_absolute_path, get_home, execute_and_read_output, get_dos_path, get_file_mtime
 
 #ifndef FPM_BOOTSTRAP
     interface
@@ -49,6 +49,14 @@ module fpm_filesystem
             character(kind=c_char), intent(in) :: path(*)
             integer(kind=c_int) :: r
         end function c_is_dir
+
+        function c_get_mtime(path, sec, nsec) result(r) bind(c, name="c_get_mtime")
+            import c_char, c_int, c_long
+            character(kind=c_char), intent(in) :: path(*)
+            integer(kind=c_long), intent(out) :: sec
+            integer(kind=c_long), intent(out) :: nsec
+            integer(kind=c_int) :: r
+        end function c_get_mtime
     end interface
 #endif
 
@@ -1253,5 +1261,44 @@ end subroutine os_delete_dir
         if (last>1 .and. get_dos_path(last:last)=='/' .or. get_dos_path(last:last)=='\') get_dos_path = get_dos_path(1:last-1)
 
     end function get_dos_path
+
+!> Get file modification time using stat()
+subroutine get_file_mtime(file_path, mtime_sec, mtime_nsec, error)
+    character(*), intent(in) :: file_path
+    integer(int64), intent(out) :: mtime_sec
+    integer(int64), intent(out) :: mtime_nsec
+    type(error_t), allocatable, intent(out) :: error
+
+#ifndef FPM_BOOTSTRAP
+    integer(c_int) :: r
+    integer(c_long) :: sec, nsec
+    character(len=len(file_path)+1) :: c_path
+
+    if (.not. exists(file_path)) then
+        call fatal_error(error, "File not found: " // file_path)
+        mtime_sec = 0_int64
+        mtime_nsec = 0_int64
+        return
+    end if
+
+    c_path = file_path // c_null_char
+    r = c_get_mtime(c_path, sec, nsec)
+
+    if (r /= 0) then
+        call fatal_error(error, "Cannot stat file: " // file_path)
+        mtime_sec = 0_int64
+        mtime_nsec = 0_int64
+        return
+    end if
+
+    mtime_sec = int(sec, int64)
+    mtime_nsec = int(nsec, int64)
+#else
+    call fatal_error(error, "get_file_mtime not available in bootstrap mode")
+    mtime_sec = 0_int64
+    mtime_nsec = 0_int64
+#endif
+
+end subroutine get_file_mtime
 
 end module fpm_filesystem

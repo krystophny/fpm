@@ -177,7 +177,7 @@ subroutine build_model(model, settings, package_config, error)
                     if (is_dir(lib_dir)) then
                         call add_sources_from_dir(model%packages(i)%sources, lib_dir, FPM_SCOPE_LIB, &
                             with_f_ext=model%packages(i)%preprocess%suffixes, error=error, &
-                            preprocess=model%packages(i)%preprocess)
+                            preprocess=model%packages(i)%preprocess, build_dir=settings%build_dir)
                         if (allocated(error)) exit
                     end if
                 end if
@@ -231,7 +231,7 @@ subroutine build_model(model, settings, package_config, error)
     if (is_dir('app') .and. auto_exe) then
         call add_sources_from_dir(model%packages(1)%sources,'app', FPM_SCOPE_APP, &
                                    with_executables=.true., with_f_ext=model%packages(1)%preprocess%suffixes,&
-                                   error=error,preprocess=model%packages(1)%preprocess)
+                                   error=error,preprocess=model%packages(1)%preprocess,build_dir=settings%build_dir)
 
         if (allocated(error)) then
             return
@@ -242,7 +242,7 @@ subroutine build_model(model, settings, package_config, error)
         call add_sources_from_dir(model%packages(1)%sources,'example', FPM_SCOPE_EXAMPLE, &
                                   with_executables=.true., &
                                   with_f_ext=model%packages(1)%preprocess%suffixes,error=error,&
-                                  preprocess=model%packages(1)%preprocess)
+                                  preprocess=model%packages(1)%preprocess,build_dir=settings%build_dir)
 
         if (allocated(error)) then
             return
@@ -253,7 +253,7 @@ subroutine build_model(model, settings, package_config, error)
         call add_sources_from_dir(model%packages(1)%sources,'test', FPM_SCOPE_TEST, &
                                   with_executables=.true., &
                                   with_f_ext=model%packages(1)%preprocess%suffixes,error=error,&
-                                  preprocess=model%packages(1)%preprocess)
+                                  preprocess=model%packages(1)%preprocess,build_dir=settings%build_dir)
 
         if (allocated(error)) then
             return
@@ -264,7 +264,7 @@ subroutine build_model(model, settings, package_config, error)
         call add_executable_sources(model%packages(1)%sources, package%executable, FPM_SCOPE_APP, &
                                      auto_discover=auto_exe, &
                                      with_f_ext=model%packages(1)%preprocess%suffixes, &
-                                     error=error,preprocess=model%packages(1)%preprocess)
+                                     error=error,preprocess=model%packages(1)%preprocess,build_dir=settings%build_dir)
 
         if (allocated(error)) then
             return
@@ -275,7 +275,7 @@ subroutine build_model(model, settings, package_config, error)
         call add_executable_sources(model%packages(1)%sources, package%example, FPM_SCOPE_EXAMPLE, &
                                      auto_discover=auto_example, &
                                      with_f_ext=model%packages(1)%preprocess%suffixes, &
-                                     error=error,preprocess=model%packages(1)%preprocess)
+                                     error=error,preprocess=model%packages(1)%preprocess,build_dir=settings%build_dir)
 
         if (allocated(error)) then
             return
@@ -286,7 +286,7 @@ subroutine build_model(model, settings, package_config, error)
         call add_executable_sources(model%packages(1)%sources, package%test, FPM_SCOPE_TEST, &
                                      auto_discover=auto_test, &
                                      with_f_ext=model%packages(1)%preprocess%suffixes, &
-                                     error=error,preprocess=model%packages(1)%preprocess)
+                                     error=error,preprocess=model%packages(1)%preprocess,build_dir=settings%build_dir)
 
         if (allocated(error)) then
             return
