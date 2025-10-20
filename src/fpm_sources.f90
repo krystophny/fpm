@@ -152,7 +152,7 @@ subroutine add_sources_from_dir(sources,directory,scope,with_executables,with_f_
         from_cache = .false.
 
         if (present(cache)) then
-            cache_idx = find_cached_source(cache, src_file_names(i)%s)
+            cache_idx = find_cached_source(cache, canon_path(src_file_names(i)%s))
 
             if (cache_idx > 0) then
                 call get_file_mtime(src_file_names(i)%s, file_mtime_sec, file_mtime_nsec, error)

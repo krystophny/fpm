@@ -470,13 +470,14 @@ end function find_cached_source
 
 !> Populate cache entry from parsed source file
 subroutine populate_cache_from_source(cache_entry, source, error)
+    use fpm_filesystem, only: canon_path
     type(source_cache_t), intent(out) :: cache_entry
     type(srcfile_t), intent(in) :: source
     type(error_t), allocatable, intent(out) :: error
 
     integer :: i
 
-    cache_entry%file_name = source%file_name
+    cache_entry%file_name = canon_path(source%file_name)
     cache_entry%unit_type = source%unit_type
     cache_entry%unit_scope = source%unit_scope
 
