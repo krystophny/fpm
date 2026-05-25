@@ -1,0 +1,16 @@
+name = "archive_profile_switch"
+version = "0.1.0"
+license = "MIT"
+
+# Regression test for the archiver not picking up rebuilt objects when
+# switching profiles between builds: fpm run --profile prof1 followed by
+# fpm run --profile prof2 must print the new profile's macro.
+# See https://fortran-lang.discourse.group/t/fpm-conditional-compilation/10925
+
+[features]
+feat1.preprocess.cpp.macros = "PROF1"
+feat2.preprocess.cpp.macros = "PROF2"
+
+[profiles]
+prof1 = ["feat1"]
+prof2 = ["feat2"]
