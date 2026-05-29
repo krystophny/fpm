@@ -360,4 +360,48 @@ echo "Implicit build includes default features"
 rm -rf build output.txt
 popd
 
+echo "=== Testing archive_profile_switch package ==="
+
+# Regression test: switching profiles between builds (without `fpm clean`) must
+# rebuild the archive so the executable links the new profile's objects.
+# See https://fortran-lang.discourse.group/t/fpm-conditional-compilation/10925
+pushd "archive_profile_switch"
+rm -rf build
+
+echo "Test: build with --profile prof1"
+"$fpm" run --profile prof1 > output.txt
+grep -q "prof1" output.txt || { echo "ERROR: prof1 not active on first build"; exit 1; }
+echo "prof1 build works"
+
+echo "Test: re-run --profile prof1 is a no-op and still prints prof1"
+"$fpm" run --profile prof1 > output.txt
+grep -q "prof1" output.txt || { echo "ERROR: prof1 not active on rebuild"; exit 1; }
+if grep -q "prof2" output.txt; then
+    echo "ERROR: prof2 output should not appear on prof1 rebuild"
+    exit 1
+fi
+echo "prof1 rebuild is idempotent"
+
+echo "Test: switch to --profile prof2 without cleaning"
+"$fpm" run --profile prof2 > output.txt
+grep -q "prof2" output.txt || { echo "ERROR: prof2 not active after switching profiles (stale archive bug)"; exit 1; }
+if grep -q "prof1" output.txt; then
+    echo "ERROR: prof1 output still present after switching to prof2"
+    exit 1
+fi
+echo "Archive is refreshed when switching profiles"
+
+echo "Test: bounce back to --profile prof1 must restore prof1 output"
+"$fpm" run --profile prof1 > output.txt
+grep -q "prof1" output.txt || { echo "ERROR: prof1 not active after bouncing back from prof2"; exit 1; }
+if grep -q "prof2" output.txt; then
+    echo "ERROR: prof2 output still present after bouncing back to prof1"
+    exit 1
+fi
+echo "Bouncing between profiles preserves per-profile output"
+
+# Cleanup
+rm -rf build output.txt
+popd
+
 echo "All FPM features tests passed!"
