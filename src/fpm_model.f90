@@ -122,6 +122,12 @@ type, extends(serializable_t) :: srcfile_t
     !> Current hash
     integer(int64) :: digest
 
+    !> Modification time for source parsing cache validation
+    integer(int64) :: mtime_sec = 0_int64
+
+    !> Modification time nanoseconds for source parsing cache validation
+    integer(int64) :: mtime_nsec = 0_int64
+
     contains
 
         !> Serialization interface
@@ -512,6 +518,8 @@ logical function srcfile_is_same(this,that)
             if (.not.(this%link_libraries==other%link_libraries)) return
           end if
           if (.not.(this%digest==other%digest)) return
+          if (.not.(this%mtime_sec==other%mtime_sec)) return
+          if (.not.(this%mtime_nsec==other%mtime_nsec)) return
 
        class default
           ! Not the same type
@@ -560,6 +568,10 @@ subroutine srcfile_dump_to_toml(self, table, error)
     if (allocated(error)) return
     call set_list(table, "link-libraries",self%link_libraries, error)
     if (allocated(error)) return
+    call set_value(table, "mtime-sec", self%mtime_sec, error, 'srcfile_t')
+    if (allocated(error)) return
+    call set_value(table, "mtime-nsec", self%mtime_nsec, error, 'srcfile_t')
+    if (allocated(error)) return
 
 end subroutine srcfile_dump_to_toml
 
@@ -604,6 +616,9 @@ subroutine srcfile_load_from_toml(self, table, error)
 
     call get_list(table,"link-libraries",self%link_libraries, error)
     if (allocated(error)) return
+
+    call get_value(table, "mtime-sec", self%mtime_sec)
+    call get_value(table, "mtime-nsec", self%mtime_nsec)
 
 end subroutine srcfile_load_from_toml
 

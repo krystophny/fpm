@@ -4,14 +4,17 @@
 !> `[[srcfile_t]]` objects by looking for source files in the filesystem.
 !>
 module fpm_sources
-use fpm_error, only: error_t
+use iso_fortran_env, only: int64
+use fpm_error, only: error_t, fatal_error
 use fpm_model, only: srcfile_t, FPM_UNIT_PROGRAM
-use fpm_filesystem, only: basename, canon_path, dirname, join_path, list_files, is_hidden_file
+use fpm_filesystem, only: basename, canon_path, dirname, join_path, list_files, is_hidden_file, &
+                          exists, get_file_mtime, mkdir
 use fpm_environment, only: get_os_type,OS_WINDOWS
-use fpm_strings, only: lower, str_ends_with, string_t, operator(.in.), add_strings
+use fpm_strings, only: lower, str_ends_with, string_t, operator(.in.), add_strings, replace
 use fpm_source_parsing, only: parse_f_source, parse_c_source
 use fpm_manifest_executable, only: executable_config_t
 use fpm_manifest_preprocess, only: preprocess_config_t
+use fpm_toml, only: toml_table, toml_error, new_table, toml_serialize, toml_load
 implicit none
 
 private
@@ -87,7 +90,7 @@ end subroutine list_fortran_suffixes
 
 !> Add to `sources` by looking for source files in `directory`
 subroutine add_sources_from_dir(sources,directory,scope,with_executables,with_f_ext,recurse,error,&
-                                preprocess)
+                                preprocess,build_dir)
     !> List of `[[srcfile_t]]` objects to append to. Allocated if not allocated
     type(srcfile_t), allocatable, intent(inout), target :: sources(:)
     !> Directory in which to search for source files
@@ -104,10 +107,15 @@ subroutine add_sources_from_dir(sources,directory,scope,with_executables,with_f_
     type(error_t), allocatable, intent(out) :: error
     !> Optional source preprocessor configuration
     type(preprocess_config_t), optional, intent(in) :: preprocess    
+    !> Optional build directory for source parsing cache
+    character(*), intent(in), optional :: build_dir
 
     integer :: i
     logical, allocatable :: is_source(:), exclude_source(:)
-    logical :: recurse_
+    logical :: recurse_, use_cache, from_cache
+    integer(int64) :: file_mtime_sec, file_mtime_nsec
+    character(:), allocatable :: cache_file
+    type(error_t), allocatable :: cache_error
     type(string_t), allocatable :: file_names(:)
     type(string_t), allocatable :: src_file_names(:),f_ext(:)
     type(string_t), allocatable :: existing_src_files(:)
@@ -115,6 +123,7 @@ subroutine add_sources_from_dir(sources,directory,scope,with_executables,with_f_
 
     recurse_ = .true.
     if (present(recurse)) recurse_ = recurse
+    use_cache = source_cache_enabled(build_dir, preprocess)
     ! Scan directory for sources
     call list_files(directory, file_names,recurse=recurse_)
 
@@ -143,11 +152,44 @@ subroutine add_sources_from_dir(sources,directory,scope,with_executables,with_f_
 
     do i = 1, size(src_file_names)
 
-        dir_sources(i) = parse_source(src_file_names(i)%s,with_f_ext,error,preprocess)
-        if (allocated(error)) return
+        from_cache = .false.
+        if (use_cache) then
+            cache_file = get_cache_path(build_dir, src_file_names(i)%s)
+            if (exists(cache_file)) then
+                call load_srcfile_from_cache(cache_file, dir_sources(i), cache_error)
+                if (.not.allocated(cache_error)) then
+                    call get_file_mtime(src_file_names(i)%s, file_mtime_sec, &
+                                        file_mtime_nsec, cache_error)
+                    if (.not.allocated(cache_error)) then
+                        from_cache = file_mtime_sec == dir_sources(i)%mtime_sec .and. &
+                                     file_mtime_nsec == dir_sources(i)%mtime_nsec
+                    end if
+                end if
+                if (allocated(cache_error)) deallocate(cache_error)
+            end if
+        end if
+
+        if (.not.from_cache) then
+            dir_sources(i) = parse_source(src_file_names(i)%s,with_f_ext,error,preprocess)
+            if (allocated(error)) return
+
+            if (use_cache) then
+                call get_file_mtime(src_file_names(i)%s, dir_sources(i)%mtime_sec, &
+                                    dir_sources(i)%mtime_nsec, cache_error)
+                if (allocated(cache_error)) then
+                    deallocate(cache_error)
+                else
+                    cache_file = get_cache_path(build_dir, src_file_names(i)%s)
+                    call save_srcfile_to_cache(cache_file, dir_sources(i), cache_error)
+                    if (allocated(cache_error)) deallocate(cache_error)
+                end if
+            end if
+        end if
 
         dir_sources(i)%unit_scope = scope
-        allocate(dir_sources(i)%link_libraries(0))
+        if (.not.allocated(dir_sources(i)%link_libraries)) then
+            allocate(dir_sources(i)%link_libraries(0))
+        end if
 
         ! Exclude executables unless specified otherwise
         exclude_source(i) = (dir_sources(i)%unit_type == FPM_UNIT_PROGRAM)
@@ -174,7 +216,8 @@ end subroutine add_sources_from_dir
 !> Add to `sources` using the executable and test entries in the manifest and
 !> applies any executable-specific overrides such as `executable%name`.
 !> Adds all sources (including modules) from each `executable%source_dir`
-subroutine add_executable_sources(sources,executables,scope,auto_discover,with_f_ext,error,preprocess)
+subroutine add_executable_sources(sources,executables,scope,auto_discover, &
+                                  with_f_ext,error,preprocess,build_dir)
     !> List of `[[srcfile_t]]` objects to append to. Allocated if not allocated
     type(srcfile_t), allocatable, intent(inout), target :: sources(:)
     !> List of `[[executable_config_t]]` entries from manifest
@@ -189,6 +232,8 @@ subroutine add_executable_sources(sources,executables,scope,auto_discover,with_f
     type(error_t), allocatable, intent(out) :: error
     !> Optional source preprocessor configuration
     type(preprocess_config_t), optional, intent(in) :: preprocess
+    !> Optional build directory for source parsing cache
+    character(*), intent(in), optional :: build_dir
 
     integer :: i, j
 
@@ -200,7 +245,7 @@ subroutine add_executable_sources(sources,executables,scope,auto_discover,with_f
     do i=1,size(exe_dirs)
         call add_sources_from_dir(sources,exe_dirs(i)%s, scope, &
                      with_executables=auto_discover, with_f_ext=with_f_ext,recurse=.false., &
-                     error=error, preprocess=preprocess)
+                     error=error, preprocess=preprocess, build_dir=build_dir)
 
         if (allocated(error)) then
             return
@@ -352,5 +397,75 @@ pure subroutine add_srcfile_many(list,new)
     call move_alloc(from=tmp,to=list)
 
 end subroutine add_srcfile_many
+
+logical function source_cache_enabled(build_dir, preprocess)
+    character(*), intent(in), optional :: build_dir
+    type(preprocess_config_t), optional, intent(in) :: preprocess
+
+    source_cache_enabled = present(build_dir)
+    if (source_cache_enabled .and. present(preprocess)) then
+        source_cache_enabled = .not.preprocess%is_cpp()
+    end if
+
+end function source_cache_enabled
+
+function get_cache_path(build_dir, source_file) result(cache_path)
+    character(*), intent(in) :: build_dir
+    character(*), intent(in) :: source_file
+    character(:), allocatable :: cache_path
+
+    character(:), allocatable :: sanitized_name
+
+    sanitized_name = canon_path(source_file)
+    sanitized_name = replace(sanitized_name, [character(len=1) :: '/', '\', ':'], '_')
+    cache_path = join_path(build_dir, join_path('cache', &
+                           join_path('sources', sanitized_name // '.toml')))
+
+end function get_cache_path
+
+subroutine save_srcfile_to_cache(cache_file, source, error)
+    character(*), intent(in) :: cache_file
+    type(srcfile_t), intent(inout) :: source
+    type(error_t), allocatable, intent(out) :: error
+
+    type(toml_table) :: table
+    character(:), allocatable :: cache_dir
+    integer :: unit, iostat
+
+    cache_dir = dirname(cache_file)
+    if (.not.exists(cache_dir)) call mkdir(cache_dir)
+
+    call new_table(table)
+    call source%dump_to_toml(table, error)
+    if (allocated(error)) return
+
+    open(newunit=unit, file=cache_file, status='replace', action='write', iostat=iostat)
+    if (iostat /= 0) then
+        call fatal_error(error, "Cannot write cache file: " // cache_file)
+        return
+    end if
+
+    write(unit, '(a)') toml_serialize(table)
+    close(unit)
+
+end subroutine save_srcfile_to_cache
+
+subroutine load_srcfile_from_cache(cache_file, source, error)
+    character(*), intent(in) :: cache_file
+    type(srcfile_t), intent(out) :: source
+    type(error_t), allocatable, intent(out) :: error
+
+    type(toml_table), allocatable :: table
+    type(toml_error), allocatable :: parse_error
+
+    call toml_load(table, cache_file, error=parse_error)
+    if (allocated(parse_error)) then
+        call fatal_error(error, "Invalid TOML in cache file: " // parse_error%message)
+        return
+    end if
+
+    call source%load_from_toml(table, error)
+
+end subroutine load_srcfile_from_cache
 
 end module fpm_sources
