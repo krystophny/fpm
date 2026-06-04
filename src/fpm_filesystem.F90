@@ -19,6 +19,9 @@ module fpm_filesystem
             filewrite, warnwrite, parent_dir, is_hidden_file, read_lines, read_lines_expanded, which, run, &
             run_argv, os_delete_dir, is_absolute_path, get_home, execute_and_read_output, get_dos_path, &
             command_program, command_not_found, getfile
+#ifndef FPM_BOOTSTRAP
+    public :: spawn_argv, wait_pid
+#endif
 
 #ifndef FPM_BOOTSTRAP
     interface
@@ -58,6 +61,19 @@ module fpm_filesystem
             integer(kind=c_int), intent(in), value :: argc
             integer(kind=c_int) :: r
         end function c_run_argv
+
+        function c_spawn_argv(joined, argc, redirect) result(pid) bind(c, name="c_spawn_argv")
+            import c_char, c_int
+            character(kind=c_char), intent(in) :: joined(*), redirect(*)
+            integer(kind=c_int), intent(in), value :: argc
+            integer(kind=c_int) :: pid
+        end function c_spawn_argv
+
+        function c_wait_pid(pid) result(r) bind(c, name="c_wait_pid")
+            import c_int
+            integer(kind=c_int), intent(in), value :: pid
+            integer(kind=c_int) :: r
+        end function c_wait_pid
     end interface
 #endif
 
@@ -1368,6 +1384,33 @@ subroutine run_argv(args,echo,exitstat,verbose,redirect)
     end if
 
 end subroutine run_argv
+
+#ifndef FPM_BOOTSTRAP
+!> Spawn a child process without waiting.  Returns the PID (>0), or
+!> a negative value if the program could not be started (always on Windows).
+function spawn_argv(args, redirect) result(pid)
+    type(string_t), intent(in) :: args(:)
+    character(*), intent(in) :: redirect
+    integer :: pid
+
+    character(:), allocatable :: joined
+    integer :: i
+
+    joined = ""
+    do i = 1, size(args)
+        joined = joined//args(i)%s//c_null_char
+    end do
+    pid = c_spawn_argv(joined//c_null_char, int(size(args), c_int), &
+        redirect//c_null_char)
+end function spawn_argv
+
+!> Wait for a child PID from spawn_argv and return its exit status.
+function wait_pid(pid) result(stat)
+    integer, intent(in) :: pid
+    integer :: stat
+    stat = c_wait_pid(int(pid, c_int))
+end function wait_pid
+#endif
 
 !> Delete directory using system OS remove directory commands
 subroutine os_delete_dir(is_unix, dir, echo)

@@ -106,6 +106,102 @@ static char *win_quote_arg(const char *arg)
 }
 #endif
 
+#ifndef _WIN32
+/* Start argv without waiting and return the child's PID, or -1 if it could
+   not be spawned; reap it with c_wait_pid. */
+int c_spawn_argv(const char *joined, int argc, const char *redirect)
+{
+    char **argv = NULL;
+    const char *p = joined;
+    pid_t pid;
+    int spawn_status;
+    int i;
+    int use_redirect = redirect != NULL && redirect[0] != '\0';
+    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_t *actions_ptr = NULL;
+
+    if (argc < 1) {
+        return -1;
+    }
+
+    argv = calloc((size_t)argc + 1, sizeof(char *));
+    if (argv == NULL) {
+        return -1;
+    }
+
+    for (i = 0; i < argc; ++i) {
+        argv[i] = (char *)p;
+        p += strlen(p) + 1;
+    }
+
+    if (use_redirect) {
+        if (posix_spawn_file_actions_init(&actions) != 0) {
+            free(argv);
+            return -1;
+        }
+        actions_ptr = &actions;
+        if (posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, redirect,
+                                             O_WRONLY | O_CREAT | O_TRUNC, 0666) != 0 ||
+            posix_spawn_file_actions_adddup2(&actions, STDOUT_FILENO, STDERR_FILENO) != 0) {
+            posix_spawn_file_actions_destroy(&actions);
+            free(argv);
+            return -1;
+        }
+    }
+
+    spawn_status = posix_spawnp(&pid, argv[0], actions_ptr, NULL, argv, environ);
+    if (use_redirect) {
+        posix_spawn_file_actions_destroy(&actions);
+    }
+    free(argv);
+
+    /* posix_spawnp reports a failed spawn as a positive errno, which the
+       caller would take for an exit code; -1 lets it fall back to the shell. */
+    if (spawn_status != 0) {
+        return -1;
+    }
+    return (int)pid;
+}
+
+/* Wait for the child pid and return its exit code, 128 + the signal number if
+   a signal ended it, or -1 on error. */
+int c_wait_pid(int raw_pid)
+{
+    pid_t pid = (pid_t)raw_pid;
+    int wait_status;
+    int ws;
+
+    do {
+        ws = waitpid(pid, &wait_status, 0);
+    } while (ws < 0 && errno == EINTR);
+
+    if (ws < 0) {
+        return -1;
+    }
+    if (WIFEXITED(wait_status)) {
+        return WEXITSTATUS(wait_status);
+    }
+    if (WIFSIGNALED(wait_status)) {
+        return 128 + WTERMSIG(wait_status);
+    }
+    return -1;
+}
+#else
+int c_spawn_argv(const char *joined, int argc, const char *redirect)
+{
+    (void)joined;
+    (void)argc;
+    (void)redirect;
+    return -1;
+}
+
+int c_wait_pid(int raw_pid)
+{
+    (void)raw_pid;
+    return -1;
+}
+#endif
+
 int c_run_argv(const char *joined, int argc, const char *redirect)
 {
 #ifdef _WIN32
@@ -252,72 +348,17 @@ int c_run_argv(const char *joined, int argc, const char *redirect)
     free((void *)argv);
     return result;
 #else
-    char **argv = NULL;
-    const char *p = joined;
-    pid_t pid;
-    int spawn_status;
-    int wait_status;
-    int i;
-    int use_redirect = redirect != NULL && redirect[0] != '\0';
-    posix_spawn_file_actions_t actions;
-    posix_spawn_file_actions_t *actions_ptr = NULL;
+    int pid;
 
     if (argc < 1) {
         return 0;
     }
 
-    argv = calloc((size_t)argc + 1, sizeof(char *));
-    if (argv == NULL) {
+    pid = c_spawn_argv(joined, argc, redirect);
+    if (pid < 0) {
         return -1;
     }
-
-    for (i = 0; i < argc; ++i) {
-        argv[i] = (char *)p;
-        p += strlen(p) + 1;
-    }
-
-    if (use_redirect) {
-        if (posix_spawn_file_actions_init(&actions) != 0) {
-            free(argv);
-            return -1;
-        }
-        actions_ptr = &actions;
-        if (posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, redirect,
-                                             O_WRONLY | O_CREAT | O_TRUNC, 0666) != 0 ||
-            posix_spawn_file_actions_adddup2(&actions, STDOUT_FILENO, STDERR_FILENO) != 0) {
-            posix_spawn_file_actions_destroy(&actions);
-            free(argv);
-            return -1;
-        }
-    }
-
-    spawn_status = posix_spawnp(&pid, argv[0], actions_ptr, NULL, argv, environ);
-    if (use_redirect) {
-        posix_spawn_file_actions_destroy(&actions);
-    }
-    free(argv);
-
-    /* posix_spawnp reports a failed spawn as a positive errno, which the
-       caller would take for an exit code; -1 lets it fall back to the shell. */
-    if (spawn_status != 0) {
-        return -1;
-    }
-
-    do {
-        spawn_status = waitpid(pid, &wait_status, 0);
-    } while (spawn_status < 0 && errno == EINTR);
-
-    if (spawn_status < 0) {
-        return -1;
-    }
-
-    if (WIFEXITED(wait_status)) {
-        return WEXITSTATUS(wait_status);
-    }
-    if (WIFSIGNALED(wait_status)) {
-        return 128 + WTERMSIG(wait_status);
-    }
-    return -1;
+    return c_wait_pid(pid);
 #endif
 }
 
