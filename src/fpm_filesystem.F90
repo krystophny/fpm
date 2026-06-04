@@ -17,7 +17,7 @@ module fpm_filesystem
     public :: basename, canon_path, dirname, is_dir, join_path, number_of_rows, list_files, get_local_prefix, &
             mkdir, exists, get_temp_filename, windows_path, unix_path, getline, delete_file, fileopen, fileclose, &
             filewrite, warnwrite, parent_dir, is_hidden_file, read_lines, read_lines_expanded, &
-            read_text_file, which, run, run_argv, &
+            read_text_file, which, run, run_argv, spawn_argv, wait_pid, &
             os_delete_dir, is_absolute_path, get_home, execute_and_read_output, get_dos_path, &
             get_file_mtime
 
@@ -59,6 +59,19 @@ module fpm_filesystem
             integer(kind=c_int), intent(in), value :: argc
             integer(kind=c_int) :: r
         end function c_run_argv
+
+        function c_spawn_argv(joined, argc, redirect) result(pid) bind(c, name="c_spawn_argv")
+            import c_char, c_int
+            character(kind=c_char), intent(in) :: joined(*), redirect(*)
+            integer(kind=c_int), intent(in), value :: argc
+            integer(kind=c_int) :: pid
+        end function c_spawn_argv
+
+        function c_wait_pid(pid) result(r) bind(c, name="c_wait_pid")
+            import c_int
+            integer(kind=c_int), intent(in), value :: pid
+            integer(kind=c_int) :: r
+        end function c_wait_pid
 
         function c_mkdir_p(path) result(r) bind(c, name="c_mkdir_p")
             import c_char, c_int
@@ -1192,6 +1205,32 @@ subroutine run_argv(args,echo,exitstat,verbose,redirect)
     end if
 
 end subroutine run_argv
+
+!> Spawn a child process without waiting.  Returns the PID (>0), or
+!> a negative value on failure.  Must be called from a single thread.
+function spawn_argv(args, redirect) result(pid)
+    type(string_t), intent(in) :: args(:)
+    character(*), intent(in) :: redirect
+    integer :: pid
+
+    character(:), allocatable :: joined
+    integer :: i
+
+    joined = ""
+    do i = 1, size(args)
+        joined = joined//args(i)%s//c_null_char
+    end do
+    pid = c_spawn_argv(joined//c_null_char, int(size(args), c_int), &
+        redirect//c_null_char)
+end function spawn_argv
+
+!> Wait for a child PID and return its exit status.
+!> Safe to call from any thread.
+function wait_pid(pid) result(stat)
+    integer, intent(in) :: pid
+    integer :: stat
+    stat = c_wait_pid(int(pid, c_int))
+end function wait_pid
 
 !> Delete directory using system OS remove directory commands
 subroutine os_delete_dir(is_unix, dir, echo)

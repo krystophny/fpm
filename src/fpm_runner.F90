@@ -1,7 +1,8 @@
 module fpm_runner
 use fpm_command_line, only: fpm_run_settings
 use fpm_environment, only: get_env, get_os_type, os_is_unix, OS_MACOS
-use fpm_filesystem, only: delete_file, exists, get_temp_filename, getline, run, run_argv
+use fpm_filesystem, only: delete_file, exists, get_temp_filename, getline, run, run_argv, &
+                         spawn_argv, wait_pid
 use fpm_strings, only: add_strings, string_cat, string_t
 use shlex_module, only: ms_split, sh_split => split
 implicit none
@@ -46,12 +47,20 @@ subroutine run_executables(executables, settings, parallel, stat)
     end if
 
     if (parallel) then
-        !$omp parallel do default(shared) schedule(dynamic,1)
-        do i = 1, size(commands)
-            call run_argv(commands(i)%argv, echo=.false., verbose=.false., &
-                          redirect=commands(i)%log_file%s, exitstat=stat(i))
-        end do
-        !$omp end parallel do
+        block
+            integer, allocatable :: pids(:)
+            allocate(pids(size(commands)))
+            do i = 1, size(commands)
+                pids(i) = spawn_argv(commands(i)%argv, commands(i)%log_file%s)
+            end do
+            do i = 1, size(commands)
+                if (pids(i) > 0) then
+                    stat(i) = wait_pid(pids(i))
+                else
+                    stat(i) = -1
+                end if
+            end do
+        end block
     else
         do i = 1, size(commands)
             call run_argv(commands(i)%argv, echo=.false., verbose=.false., &
