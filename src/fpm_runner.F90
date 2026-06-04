@@ -195,7 +195,7 @@ subroutine replay_logs(commands, stat, verbose)
     integer :: i
 
     do i = 1, size(commands)
-        if (verbose .or. stat(i) /= 0) call replay_log(commands(i)%log_file%s)
+        call replay_log(commands(i)%log_file%s)
         if (exists(commands(i)%log_file%s)) call delete_file(commands(i)%log_file%s)
     end do
 end subroutine replay_logs
