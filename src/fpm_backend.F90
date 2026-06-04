@@ -475,6 +475,18 @@ subroutine build_target(model,target,verbose,dry_run,table,stat)
         end if
     end if
 
+    ! Interface-aware incremental rebuild: skip recompiling an object whose source
+    ! is unchanged and whose dependencies' module interfaces are unchanged, even if
+    ! a dependency was recompiled. Only gfortran .mod files are a stable interface
+    ! signal, so other compilers keep the conservative dependency cascade.
+    if (.not.dry_run .and. model%compiler%id == id_gcc &
+        & .and. target%target_type == FPM_TARGET_OBJECT) then
+        if (object_can_skip(target)) then
+            stat = 0
+            return
+        end if
+    end if
+
     select case(target%target_type)
 
     case (FPM_TARGET_OBJECT)
