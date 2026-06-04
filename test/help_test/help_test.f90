@@ -23,25 +23,25 @@ character(len=*),parameter     :: cmds(*) = [character(len=80) :: &
 ! build manual as pieces using various help commands
 ! debug version
 '--version                           ',& ! verify fpm version being used
-'--help        > fpm_scratch_help.txt',&
-'help new     >> fpm_scratch_help.txt',&
-'help update  >> fpm_scratch_help.txt',&
-'build --help >> fpm_scratch_help.txt',&
-'help run     >> fpm_scratch_help.txt',&
-'help test    >> fpm_scratch_help.txt',&
-'help runner  >> fpm_scratch_help.txt',&
-'help install >> fpm_scratch_help.txt',&
-'help list    >> fpm_scratch_help.txt',&
-'help help    >> fpm_scratch_help.txt',&
-'help clean   >> fpm_scratch_help.txt',&
-'help publish >> fpm_scratch_help.txt',&
-'--version    >> fpm_scratch_help.txt',&
+'--help        > fpm_help_scratch_help.txt',&
+'help new     >> fpm_help_scratch_help.txt',&
+'help update  >> fpm_help_scratch_help.txt',&
+'build --help >> fpm_help_scratch_help.txt',&
+'help run     >> fpm_help_scratch_help.txt',&
+'help test    >> fpm_help_scratch_help.txt',&
+'help runner  >> fpm_help_scratch_help.txt',&
+'help install >> fpm_help_scratch_help.txt',&
+'help list    >> fpm_help_scratch_help.txt',&
+'help help    >> fpm_help_scratch_help.txt',&
+'help clean   >> fpm_help_scratch_help.txt',&
+'help publish >> fpm_help_scratch_help.txt',&
+'--version    >> fpm_help_scratch_help.txt',&
 ! generate manual
-' help manual   > fpm_scratch_manual.txt']
+' help manual   > fpm_help_scratch_manual.txt']
 
-!'fpm run             >> fpm_scratch_help.txt',&
-!'fpm run -- --list       >> fpm_scratch_help.txt',&
-!'fpm run -- list --list  >> fpm_scratch_help.txt',&
+!'fpm run             >> fpm_help_scratch_help.txt',&
+!'fpm run -- --list       >> fpm_help_scratch_help.txt',&
+!'fpm run -- list --list  >> fpm_help_scratch_help.txt',&
 character(len=*),parameter :: names(*)=[character(len=10) ::&
    'fpm','new','update','build','run','test','runner','install','list','help','clean']
 character(len=:), allocatable :: prog
@@ -68,18 +68,18 @@ integer :: length
    write(*,'(g0:,1x)')'<INFO>TEST help SUBCOMMAND STARTED'
    if(allocated(tally))deallocate(tally)
    allocate(tally(0))
-   call wipe('fpm_scratch_help.txt')
-   call wipe('fpm_scratch_manual.txt')
+   call wipe('fpm_help_scratch_help.txt')
+   call wipe('fpm_help_scratch_manual.txt')
 
    ! check that output has NAME SYNOPSIS DESCRIPTION
       do i=1,size(names)
          write(*,*)'<INFO>check '//names(i)//' for NAME SYNOPSIS DESCRIPTION'
-         path= prog // ' help '//names(i)//' >fpm_scratch_help.txt'
+         path= prog // ' help '//names(i)//' >fpm_help_scratch_help.txt'
          message=''
          call execute_command_line(path,exitstat=estat,cmdstat=cstat,cmdmsg=message)
          write(*,'(*(g0))')'<INFO>CMD=',path,' EXITSTAT=',estat,' CMDSTAT=',cstat,' MESSAGE=',trim(message)
          tally=[tally,all([estat==0,cstat==0])]
-         call swallow('fpm_scratch_help.txt',page1)
+         call swallow('fpm_help_scratch_help.txt',page1)
          if(size(page1)<3)then
             write(*,*)'<ERROR>help for '//names(i)//' ridiculiously small'
             tally=[tally,.false.]
@@ -100,7 +100,7 @@ integer :: length
             write(*,'(a)')page1
          endif
          write(*,*)'<INFO>have completed ',count(tally),' tests'
-         call wipe('fpm_scratch_help.txt')
+         call wipe('fpm_help_scratch_help.txt')
       enddo
 
 
@@ -114,8 +114,8 @@ integer :: length
    enddo
 
    ! compare book written in fragments with manual
-   call swallow('fpm_scratch_help.txt',book1)
-   call swallow('fpm_scratch_manual.txt',book2)
+   call swallow('fpm_help_scratch_help.txt',book1)
+   call swallow('fpm_help_scratch_manual.txt',book2)
    ! get rid of lines from run() which is not on stderr at the moment
    book1=pack(book1,index(book1,' + build/')==0)
    book2=pack(book2,index(book2,' + build/')==0)
@@ -148,8 +148,8 @@ integer :: length
    endif
 
    write(*,'("<INFO>HELP TEST TALLY=",*(g0))')tally
-   call wipe('fpm_scratch_help.txt')
-   call wipe('fpm_scratch_manual.txt')
+   call wipe('fpm_help_scratch_help.txt')
+   call wipe('fpm_help_scratch_manual.txt')
    if(all(tally))then
       write(*,'(*(g0))')'<INFO>PASSED: all ',count(tally),' tests passed '
    else

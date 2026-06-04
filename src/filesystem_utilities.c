@@ -40,6 +40,29 @@ int c_is_dir(const char *path)
     return r == 0 && S_ISDIR(m.st_mode);
 }
 
+/* Store the modification time of path in sec and nsec; return 0, or the
+   nonzero stat() result with both zeroed. */
+int c_get_mtime(const char *path, int64_t *sec, int64_t *nsec)
+{
+    struct stat m;
+    int r = stat(path, &m);
+    if (r != 0) {
+        *sec = 0;
+        *nsec = 0;
+        return r;
+    }
+
+    *sec = (int64_t)m.st_mtime;
+#if defined(__APPLE__)
+    *nsec = (int64_t)m.st_mtimespec.tv_nsec;
+#elif defined(_WIN32)
+    *nsec = 0;
+#else
+    *nsec = (int64_t)m.st_mtim.tv_nsec;
+#endif
+    return 0;
+}
+
 const char *get_d_name(struct dirent *d)
 {
     return (const char *) d->d_name;

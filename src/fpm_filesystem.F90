@@ -9,7 +9,7 @@ module fpm_filesystem
     use fpm_environment, only: separator, get_env, os_is_unix
     use fpm_strings, only: f_string, replace, string_t, split, split_lines_first_last, dilate, add_strings, &
         str_begins_with_str, string_cat, str
-    use iso_c_binding, only: c_char, c_ptr, c_int, c_null_char, c_associated, c_f_pointer
+    use iso_c_binding, only: c_char, c_ptr, c_int, c_null_char, c_associated, c_f_pointer, c_int64_t
     use fpm_error, only : fpm_stop, error_t, fatal_error
     use shlex_module, only: sh_split => split, ms_split
     implicit none
@@ -18,7 +18,8 @@ module fpm_filesystem
             mkdir, exists, get_temp_filename, windows_path, unix_path, getline, delete_file, fileopen, fileclose, &
             filewrite, warnwrite, parent_dir, is_hidden_file, read_lines, read_lines_expanded, which, run, &
             run_argv, os_delete_dir, is_absolute_path, get_home, execute_and_read_output, get_dos_path, &
-            command_program, command_not_found, getfile
+            command_program, command_not_found, getfile, &
+            get_file_mtime
 #ifndef FPM_BOOTSTRAP
     public :: spawn_argv, wait_pid
 #endif
@@ -74,6 +75,14 @@ module fpm_filesystem
             integer(kind=c_int), intent(in), value :: pid
             integer(kind=c_int) :: r
         end function c_wait_pid
+
+        function c_get_mtime(path, sec, nsec) result(r) bind(c, name="c_get_mtime")
+            import c_char, c_int, c_int64_t
+            character(kind=c_char), intent(in) :: path(*)
+            integer(kind=c_int64_t), intent(out) :: sec
+            integer(kind=c_int64_t), intent(out) :: nsec
+            integer(kind=c_int) :: r
+        end function c_get_mtime
     end interface
 #endif
 
@@ -1605,5 +1614,36 @@ end subroutine os_delete_dir
         if (last>1 .and. get_dos_path(last:last)=='/' .or. get_dos_path(last:last)=='\') get_dos_path = get_dos_path(1:last-1)
 
     end function get_dos_path
+
+    !> Get the modification time of a file as seconds and nanoseconds since the epoch
+    subroutine get_file_mtime(file_path, mtime_sec, mtime_nsec, error)
+        character(*), intent(in) :: file_path
+        integer(int64), intent(out) :: mtime_sec
+        integer(int64), intent(out) :: mtime_nsec
+        type(error_t), allocatable, intent(out) :: error
+
+#ifndef FPM_BOOTSTRAP
+        character(kind=c_char, len=:), allocatable :: c_path
+        integer(c_int) :: stat
+        integer(c_int64_t) :: sec, nsec
+
+        c_path = file_path // c_null_char
+        stat = c_get_mtime(c_path, sec, nsec)
+        if (stat /= 0) then
+            call fatal_error(error, "Cannot stat file: " // file_path)
+            mtime_sec = 0_int64
+            mtime_nsec = 0_int64
+            return
+        end if
+
+        mtime_sec = int(sec, int64)
+        mtime_nsec = int(nsec, int64)
+#else
+        call fatal_error(error, "get_file_mtime not available in bootstrap mode")
+        mtime_sec = 0_int64
+        mtime_nsec = 0_int64
+#endif
+
+    end subroutine get_file_mtime
 
 end module fpm_filesystem

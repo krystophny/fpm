@@ -1,9 +1,11 @@
 !> Define tests for the `fpm_sources` module (parsing routines)
 module test_source_parsing
     use testsuite, only : new_unittest, unittest_t, error_t, test_failed
-    use fpm_filesystem, only: get_temp_filename
+    use fpm_filesystem, only: get_temp_filename, join_path, list_files, mkdir, os_delete_dir, run
+    use fpm_sources, only: add_sources_from_dir
+    use fpm_environment, only: os_is_unix
     use fpm_source_parsing, only: parse_f_source, parse_c_source, parse_use_statement
-    use fpm_model, only: srcfile_t, FPM_UNIT_PROGRAM, FPM_UNIT_MODULE, &
+    use fpm_model, only: srcfile_t, FPM_UNIT_PROGRAM, FPM_UNIT_MODULE, FPM_SCOPE_LIB, &
                          FPM_UNIT_SUBMODULE, FPM_UNIT_SUBPROGRAM, FPM_UNIT_CSOURCE, &
                          FPM_UNIT_CPPSOURCE, FPM_UNIT_NAME
     use fpm_strings, only: operator(.in.), lower, string_t
@@ -64,7 +66,8 @@ contains
             & new_unittest("define-without-trailing-space", test_define_no_trailing_space), &
             & new_unittest("macro-case-sensitivity", test_macro_case_sensitivity), &
             & new_unittest("if-macro-truthy", test_if_macro_truthy), &
-            & new_unittest("if-macro-truthy-from-define", test_if_macro_truthy_from_define) &
+            & new_unittest("if-macro-truthy-from-define", test_if_macro_truthy_from_define), &
+            & new_unittest("source-cache", test_source_cache) &
             ]
 
     end subroutine collect_source_parsing
@@ -2596,5 +2599,76 @@ contains
 
     end subroutine test_if_macro_truthy_from_define
 
+    !> Cached parses are reused while the file is unchanged and dropped after an edit
+    subroutine test_source_cache(error)
+        type(error_t), allocatable, intent(out) :: error
+
+        character(:), allocatable :: dir, src, file, build
+        type(string_t), allocatable :: cache_files(:)
+
+        if (.not.os_is_unix()) return
+
+        dir = get_temp_filename()
+        src = join_path(dir, 'src')
+        build = join_path(dir, 'build')
+        file = join_path(src, 'a.f90')
+        call mkdir(src, echo=.false.)
+
+        ! An old mtime lets the first entry be trusted at once
+        call write_module(file, 'aaa')
+        call run('touch -t 202001010000 '//file, echo=.false., verbose=.false.)
+        call check_module(src, build, 'aaa', error)
+        if (allocated(error)) return
+
+        ! Show that the second scan reads the entry rather than the file
+        call list_files(join_path(build, join_path('cache', 'sources')), cache_files)
+        if (size(cache_files) /= 1) then
+            call test_failed(error, 'Expected one source cache entry')
+            return
+        end if
+        call run('sed -i.orig s/aaa/zzz/ '//cache_files(1)%s, echo=.false., verbose=.false.)
+        call check_module(src, build, 'zzz', error)
+        if (allocated(error)) return
+
+        ! Same-size edits right after a scan must still be seen
+        call write_module(file, 'bbb')
+        call check_module(src, build, 'bbb', error)
+        if (allocated(error)) return
+        call write_module(file, 'ccc')
+        call check_module(src, build, 'ccc', error)
+        if (allocated(error)) return
+
+        call os_delete_dir(.true., dir, echo=.false.)
+
+    end subroutine test_source_cache
+
+    subroutine write_module(file, name)
+        character(*), intent(in) :: file, name
+        integer :: unit
+
+        open(newunit=unit, file=file, status='replace')
+        write(unit, '(a)') 'module '//name, 'end module '//name
+        close(unit)
+
+    end subroutine write_module
+
+    subroutine check_module(src, build, name, error)
+        character(*), intent(in) :: src, build, name
+        type(error_t), allocatable, intent(out) :: error
+
+        type(srcfile_t), allocatable :: sources(:)
+
+        call add_sources_from_dir(sources, src, FPM_SCOPE_LIB, error=error, build_dir=build)
+        if (allocated(error)) return
+
+        if (size(sources) /= 1) then
+            call test_failed(error, 'Expected one source in '//src)
+            return
+        end if
+        if (.not.(name .in. sources(1)%modules_provided)) then
+            call test_failed(error, 'Expected module '//name//' in '//sources(1)%file_name)
+        end if
+
+    end subroutine check_module
 
 end module test_source_parsing
