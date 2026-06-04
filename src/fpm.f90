@@ -9,6 +9,7 @@ use fpm_command_line, only: fpm_build_settings, fpm_new_settings, &
 use fpm_dependency, only : new_dependency_tree
 use fpm_filesystem, only: is_dir, join_path, list_files, exists, &
                    basename, filewrite, mkdir, run, os_delete_dir, delete_file
+use fpm_runner, only: run_executables
 use fpm_model, only: fpm_model_t, srcfile_t, show_model, &
                     FPM_SCOPE_UNKNOWN, FPM_SCOPE_LIB, FPM_SCOPE_DEP, &
                     FPM_SCOPE_APP, FPM_SCOPE_EXAMPLE, FPM_SCOPE_TEST
@@ -704,27 +705,36 @@ subroutine cmd_run(settings,test)
         call set_library_path(model, targets, error)
         if (allocated(error)) call fpm_stop(1, '*cmd_run* Run error: '//error%message)
 
-        allocate(stat(size(executables)))
-        do i=1,size(executables)
-            if (exists(executables(i)%s)) then
-                
-                ! Prepare command line
-                                              run_cmd = executables(i)%s
-                if (settings%runner/=' ')     run_cmd = settings%runner_command()//' '//run_cmd
-                if (allocated(settings%args)) run_cmd = run_cmd//" "//settings%args
-                
-                ! System Integrity Protection will not propagate the .dylib environment variables
-                ! to the child process: add paths manually
-                if (get_os_type()==OS_MACOS)  run_cmd = "env DYLD_LIBRARY_PATH=" // &
-                                                         get_env("DYLD_LIBRARY_PATH","") // &
-                                                         " " // run_cmd
+        if (test) then
+            do i=1,size(executables)
+                if (.not.exists(executables(i)%s)) then
+                    call fpm_stop(1,'*cmd_run*:'//executables(i)%s//' not found')
+                end if
+            end do
+            call run_executables(executables, settings, parallel=.true., stat=stat)
+        else
+            allocate(stat(size(executables)))
+            do i=1,size(executables)
+                if (exists(executables(i)%s)) then
 
-                call run(run_cmd,echo=settings%verbose,exitstat=stat(i))                
-                
-            else
-                call fpm_stop(1,'*cmd_run*:'//executables(i)%s//' not found')
-            end if
-        end do
+                    ! Prepare command line
+                                                  run_cmd = executables(i)%s
+                    if (settings%runner/=' ')     run_cmd = settings%runner_command()//' '//run_cmd
+                    if (allocated(settings%args)) run_cmd = run_cmd//" "//settings%args
+
+                    ! System Integrity Protection will not propagate the .dylib environment variables
+                    ! to the child process: add paths manually
+                    if (get_os_type()==OS_MACOS)  run_cmd = "env DYLD_LIBRARY_PATH=" // &
+                                                             get_env("DYLD_LIBRARY_PATH","") // &
+                                                             " " // run_cmd
+
+                    call run(run_cmd,echo=settings%verbose,exitstat=stat(i))
+
+                else
+                    call fpm_stop(1,'*cmd_run*:'//executables(i)%s//' not found')
+                end if
+            end do
+        end if
 
         if (any(stat /= 0)) then
             do i=1,size(stat)
