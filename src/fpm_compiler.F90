@@ -54,6 +54,7 @@ implicit none
 public :: compiler_t, new_compiler, archiver_t, new_archiver, get_macros
 public :: append_clean_flags, append_clean_flags_array
 public :: debug
+public :: split_append
 public :: id_gcc,id_all
 public :: match_compiler_type, compiler_id_name, validate_compiler_name, is_cxx_gnu_based
 public :: LANG_FORTRAN, LANG_C, LANG_CXX
