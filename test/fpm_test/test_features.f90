@@ -3,10 +3,9 @@ module test_features
     use testsuite, only : new_unittest, unittest_t, error_t, test_failed
     use fpm_manifest, only: package_config_t, get_package_data
     use fpm_manifest_feature, only: feature_config_t
-    use fpm_manifest_feature_collection, only: feature_collection_t
     use fpm_manifest_platform, only: platform_config_t
     use fpm_environment, only: OS_ALL, OS_LINUX, OS_MACOS, OS_WINDOWS
-    use fpm_compiler, only: id_all, id_gcc, id_intel_classic_nix, id_intel_classic_windows, id_intel_llvm_nix, &
+    use fpm_compiler, only: id_gcc, id_intel_classic_nix, id_intel_llvm_nix, &
         match_compiler_type
     use fpm_strings, only: string_t
     use fpm_filesystem, only: get_temp_filename

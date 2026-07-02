@@ -13,10 +13,10 @@
 !>features = ["optimized", "strip-symbols"]
 !>```
 module fpm_manifest_profile
-    use fpm_error, only: error_t, fatal_error, syntax_error
+    use fpm_error, only: error_t, fatal_error
     use fpm_strings, only: string_t, operator(==)
     use tomlf, only: toml_table, toml_array, toml_key, toml_stat, len
-    use fpm_toml, only: get_value, serializable_t, set_string, set_list, get_list, add_table
+    use fpm_toml, only: get_value, serializable_t, set_string, set_list, get_list
     
     implicit none
     private

@@ -40,11 +40,11 @@ use fpm_compiler, only: compiler_t, archiver_t, debug
 use fpm_dependency, only: dependency_tree_t
 use fpm_versioning, only: version_t, new_version
 use fpm_strings, only: string_t, str, len_trim, upper, operator(==)
-use tomlf, only: toml_table, toml_stat
+use tomlf, only: toml_table
 use fpm_toml, only: serializable_t, set_value, set_list, get_value, &
                     & get_list, add_table, toml_key, add_array, set_string
 use fpm_error, only: error_t, fatal_error
-use fpm_environment, only: OS_WINDOWS,OS_MACOS, get_os_type, OS_UNKNOWN, OS_LINUX, OS_CYGWIN, &
+use fpm_environment, only: &
                               OS_SOLARIS, OS_FREEBSD, OS_OPENBSD, OS_ALL, validate_os_name, OS_NAME, &
                               match_os_type
 use fpm_manifest_preprocess, only: preprocess_config_t

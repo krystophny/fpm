@@ -324,6 +324,11 @@ jobs:
         mv $(which fpm) fpm-bootstrap${{ matrix.exe }}
         echo "BOOTSTRAP=$PWD/fpm-bootstrap" >> $GITHUB_ENV
 
+    - name: Use bootstrap-compatible manifest
+      shell: bash
+      run: |
+        git apply ci/bootstrap.patch
+
     - name: (macOS/Ubuntu) Use gcc/g++ instead of Clang for C/C++ / ifx to build fpm
       if: contains(matrix.os,'macOS') || contains(matrix.os,'ubuntu')
       shell: bash
@@ -362,6 +367,11 @@ jobs:
         ${{ env.BOOTSTRAP }} run --runner cp -- fpm-debug${{ matrix.exe }}
         rm -v ${{ env.BOOTSTRAP }}
         echo "FPM=$PWD/fpm-debug" >> $GITHUB_ENV
+
+    - name: Restore default feature manifest
+      shell: bash
+      run: |
+        git apply --reverse ci/bootstrap.patch
 
     - name: Get version (normal)
       if: github.event_name != 'release'

@@ -4,7 +4,7 @@
 !>
 module fpm_pkg_config
 
-use fpm_strings, only: string_t,str_begins_with_str,len_trim,remove_newline_characters, &
+use fpm_strings, only: string_t, len_trim, remove_newline_characters, &
     split
 use fpm_error, only: error_t, fatal_error, fpm_stop
 use fpm_filesystem, only: get_temp_filename,getline

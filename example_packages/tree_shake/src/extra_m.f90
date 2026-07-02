@@ -6,7 +6,7 @@ module extra_m
     implicit none
     private
 
-    integer, parameter :: m = 0
+    integer, parameter :: m = 0 * len(FAREWELL_STR)
 end
 
 function external_function() result(i)

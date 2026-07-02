@@ -27,6 +27,7 @@ contains
             & new_unittest("tokenize-flags", test_tokenize_flags), &
             & new_unittest("compile-commands-unix", test_register_compile_command_unix), &
             & new_unittest("compile-commands-windows", test_register_compile_command_windows), &
+            & new_unittest("compile-commands-executed-argv", test_register_executed_argv), &
             & new_unittest("get-default-flags-pic", test_get_default_flags_pic)]
 
     end subroutine collect_compiler
@@ -309,6 +310,66 @@ contains
             end if
         end associate
     end subroutine test_register_compile_command_windows
+
+    subroutine test_register_executed_argv(error)
+        type(error_t), allocatable, intent(out) :: error
+
+        type(compiler_t) :: compiler
+        type(compile_command_table_t) :: table
+        type(error_t), allocatable :: validation_error
+        type(string_t), allocatable :: empty(:), expected(:)
+        integer :: stat
+
+        compiler%fc = "gfortran"
+        compiler%echo = .false.
+        compiler%verbose = .false.
+
+        call compiler%compile_fortran("source dir/main.f90", "build dir/main.o", &
+            '-DNAME="two words" -I"include dir"', "", stat, table, dry_run=.true.)
+        if (stat /= 0) then
+            call test_failed(error, "Dry-run compile command registration failed")
+            return
+        end if
+
+        expected = [string_t("gfortran"), string_t("-c"), &
+            string_t("source dir/main.f90"), string_t("-DNAME=two words"), &
+            string_t("-Iinclude dir"), string_t("-o"), string_t("build dir/main.o")]
+
+        if (size(table%command) /= 1) then
+            call test_failed(error, "Expected one dry-run compile command")
+            return
+        end if
+        if (.not.table%command(1)%arguments == expected) then
+            call test_failed(error, "Registered arguments differ from executed argv")
+            return
+        end if
+        if (table%command(1)%file%s /= "source dir/main.f90") then
+            call test_failed(error, "Registered source differs from compiled input")
+            return
+        end if
+
+        allocate(empty(0))
+        call table%register(empty, "source dir/main.f90", validation_error)
+        if (.not.allocated(validation_error)) then
+            call test_failed(error, "Empty arguments should fail registration")
+            return
+        end if
+        if (size(table%command) /= 1) then
+            call test_failed(error, "Empty arguments changed the command table")
+            return
+        end if
+
+        call table%register(expected, "", validation_error)
+        if (.not.allocated(validation_error)) then
+            call test_failed(error, "Empty source should fail registration")
+            return
+        end if
+        if (size(table%command) /= 1) then
+            call test_failed(error, "Empty source changed the command table")
+            return
+        end if
+
+    end subroutine test_register_executed_argv
 
     subroutine test_get_default_flags_pic(error)
         !> Error handling

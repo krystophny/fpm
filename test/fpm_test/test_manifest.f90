@@ -3,10 +3,7 @@ module test_manifest
     use fpm_filesystem, only: get_temp_filename
     use testsuite, only : new_unittest, unittest_t, error_t, test_failed, check_string
     use fpm_manifest
-    use fpm_manifest_profile, only: profile_config_t
-    use fpm_manifest_platform, only: platform_config_t
-    use fpm_compiler, only: id_gcc, id_intel_classic_nix
-    use fpm_environment, only: OS_LINUX
+    use fpm_compiler, only: id_gcc
     use fpm_manifest_feature, only: feature_config_t
     use fpm_strings, only: operator(.in.), string_t
     use fpm_error, only: fatal_error, error_t
@@ -237,7 +234,7 @@ contains
             return
         end if
 
-        if (.not.("include".in.package%library%include_dir)) then
+        if (.not.("include" .in. package%library%include_dir)) then
             call test_failed(error,"'include' not in default include-dir list")
             return
         end if
@@ -881,7 +878,7 @@ contains
             return
         end if
 
-        if (.not.("include".in.library%include_dir)) then
+        if (.not.("include" .in. library%include_dir)) then
             call test_failed(error,"'include' not in default include-dir list")
             return
         end if

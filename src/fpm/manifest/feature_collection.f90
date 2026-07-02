@@ -1,6 +1,6 @@
 
 module fpm_manifest_feature_collection
-    use fpm_manifest_feature, only: feature_config_t, new_feature, init_feature_components
+    use fpm_manifest_feature, only: feature_config_t, init_feature_components
     use fpm_manifest_platform, only: platform_config_t, is_platform_key    
     use fpm_manifest_dependency, only: dependency_config_t
     use fpm_manifest_example, only: example_config_t
@@ -8,17 +8,17 @@ module fpm_manifest_feature_collection
     use fpm_manifest_metapackages, only: metapackage_config_t, metapackage_request_t
     use fpm_manifest_test, only: test_config_t
     use fpm_manifest_preprocess, only: preprocess_config_t
-    use fpm_error, only: error_t, fatal_error, syntax_error
-    use fpm_environment, only: OS_UNKNOWN, OS_LINUX, OS_MACOS, OS_WINDOWS, OS_CYGWIN, OS_SOLARIS, &
+    use fpm_error, only: error_t, fatal_error
+    use fpm_environment, only: OS_UNKNOWN, OS_LINUX, OS_MACOS, OS_WINDOWS, &
                              OS_FREEBSD, OS_OPENBSD, OS_ALL, match_os_type, OS_NAME
     use fpm_compiler, only: compiler_enum, compiler_id_name, match_compiler_type, &
                           id_unknown, id_gcc, id_f95, id_caf, &
                           id_intel_classic_nix, id_intel_classic_mac, id_intel_classic_windows, &
                           id_intel_llvm_nix, id_intel_llvm_windows, id_intel_llvm_unknown, &
                           id_pgi, id_nvhpc, id_nag, id_flang, id_lahey, id_lfortran, id_all
-    use fpm_strings, only: string_t, lower, operator(==), split, str
-    use tomlf, only: toml_table, toml_array, toml_key, toml_stat
-    use fpm_toml, only: get_value, len, serializable_t, set_value, set_string, set_list, add_table, &
+    use fpm_strings, only: string_t, operator(==), str
+    use tomlf, only: toml_table, toml_key, toml_stat
+    use fpm_toml, only: get_value, len, serializable_t, set_value, add_table, &
                         get_list
     implicit none
     private

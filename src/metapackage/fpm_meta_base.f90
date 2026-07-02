@@ -6,7 +6,7 @@ module fpm_meta_base
     use fpm_manifest_dependency, only: dependency_config_t
     use fpm_manifest_preprocess, only: preprocess_config_t
     use fpm_manifest, only: package_config_t
-    use fpm_strings, only: string_t, len_trim, split, join
+    use fpm_strings, only: string_t, len_trim
     use fpm_compiler, only: append_clean_flags, append_clean_flags_array
 
     implicit none

@@ -8,7 +8,7 @@ module fpm_cmd_install
   use fpm_installer, only : installer_t, new_installer
   use fpm_manifest, only : package_config_t, get_package_data
   use fpm_model, only : fpm_model_t, FPM_SCOPE_APP, FPM_SCOPE_TEST
-  use fpm_targets, only: targets_from_sources, build_target_t, &
+  use fpm_targets, only: targets_from_sources, &
                          build_target_ptr, FPM_TARGET_EXECUTABLE, &
                          filter_library_targets, filter_executable_targets, filter_modules
   use fpm_strings, only : string_t, resize
