@@ -1,0 +1,13 @@
+diff --git a/fpm.toml b/fpm.toml
+--- a/fpm.toml
++++ b/fpm.toml
+@@ -23,8 +23,5 @@ jonquil.rev = "4fbd4cf34d577c0fd25e32667ee9e41bf231ece8"
+ fortran-shlex.git = "https://github.com/perazz/fortran-shlex"
+ fortran-shlex.tag = "2.0.1"
+-
++
+-[features.openmp]
+-default = true
+-
+ [features.openmp.dependencies]
+ openmp = "*"

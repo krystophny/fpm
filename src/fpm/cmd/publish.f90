@@ -8,7 +8,7 @@ module fpm_cmd_publish
   use fpm_model, only: fpm_model_t
   use fpm_error, only: error_t, fpm_stop
   use fpm_versioning, only: version_t
-  use fpm_filesystem, only: exists, join_path, get_temp_filename, delete_file
+  use fpm_filesystem, only: exists, get_temp_filename, delete_file
   use fpm_git, only: git_archive
   use fpm_downloader, only: downloader_t
   use fpm_strings, only: string_t

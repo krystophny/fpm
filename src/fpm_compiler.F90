@@ -1407,6 +1407,28 @@ subroutine new_archiver(self, ar, echo, verbose)
     self%verbose = verbose
 end subroutine new_archiver
 
+subroutine prepare_compile_argv(argv, executable, input, args, output, tokenized)
+    type(string_t), allocatable, intent(out) :: argv(:)
+    character(len=*), intent(in) :: executable, input, args, output
+    logical, intent(out) :: tokenized
+
+    !$omp critical(fpm_compile_argv)
+    tokenized = .true.
+    call split_append(argv, executable, .false., .false., tokenized)
+    if (tokenized) then
+        call add_strings(argv, string_t("-c"))
+        call add_strings(argv, string_t(input))
+    end if
+    if (tokenized .and. len_trim(args) > 0) then
+        call split_append(argv, args, .true., .true., tokenized)
+    end if
+    if (tokenized) then
+        call add_strings(argv, string_t("-o"))
+        call add_strings(argv, string_t(output))
+    end if
+    !$omp end critical(fpm_compile_argv)
+end subroutine prepare_compile_argv
+
 
 !> Compile a Fortran object
 subroutine compile_fortran(self, input, output, args, log_file, stat, table, dry_run)
@@ -1445,19 +1467,7 @@ subroutine compile_fortran(self, input, output, args, log_file, stat, table, dry
     ! otherwise) so quoting and backslash paths survive on both platforms.
     command = self%fc // " -c " // input // " " // args // " -o " // output
 
-    tokenized = .true.
-    call split_append(argv, self%fc, .false., .false., tokenized)
-    if (tokenized) then
-        call add_strings(argv, string_t("-c"))
-        call add_strings(argv, string_t(input))
-    end if
-    if (tokenized .and. len_trim(args) > 0) then
-        call split_append(argv, args, .true., .true., tokenized)
-    end if
-    if (tokenized) then
-        call add_strings(argv, string_t("-o"))
-        call add_strings(argv, string_t(output))
-    end if
+    call prepare_compile_argv(argv, self%fc, input, args, output, tokenized)
 
     ! Execute command
     if (.not.mock) then
@@ -1474,7 +1484,11 @@ subroutine compile_fortran(self, input, output, args, log_file, stat, table, dry
 
     ! Optionally register compile command
     if (present(table)) then
-        call table%register(command, get_os_type(), error)
+        if (tokenized) then
+            call table%register(argv, input, error)
+        else
+            call table%register(command, get_os_type(), error)
+        end if
         stat = merge(-1,0,allocated(error))
     endif
 
@@ -1581,17 +1595,7 @@ subroutine compile_c(self, input, output, args, log_file, stat, table, dry_run)
     ! via argv spawn (fork-safe under OpenMP) rather than through a shell.
     command = self%cc // " -c " // input // " " // args // " -o " // output
 
-    tokenized = .true.
-    call split_append(argv, self%cc, .false., .false., tokenized)
-    if (tokenized) then
-        call add_strings(argv, string_t("-c"))
-        call add_strings(argv, string_t(input))
-    end if
-    if (tokenized .and. len_trim(args) > 0) call split_append(argv, args, .true., .true., tokenized)
-    if (tokenized) then
-        call add_strings(argv, string_t("-o"))
-        call add_strings(argv, string_t(output))
-    end if
+    call prepare_compile_argv(argv, self%cc, input, args, output, tokenized)
 
     ! Execute command
     if (.not.mock) then
@@ -1608,7 +1612,11 @@ subroutine compile_c(self, input, output, args, log_file, stat, table, dry_run)
 
     ! Optionally register compile command
     if (present(table)) then
-        call table%register(command, get_os_type(), error)
+        if (tokenized) then
+            call table%register(argv, input, error)
+        else
+            call table%register(command, get_os_type(), error)
+        end if
         stat = merge(-1,0,allocated(error))
     endif
 
@@ -1650,17 +1658,7 @@ subroutine compile_cpp(self, input, output, args, log_file, stat, table, dry_run
     ! via argv spawn (fork-safe under OpenMP) rather than through a shell.
     command = self%cxx // " -c " // input // " " // args // " -o " // output
 
-    tokenized = .true.
-    call split_append(argv, self%cxx, .false., .false., tokenized)
-    if (tokenized) then
-        call add_strings(argv, string_t("-c"))
-        call add_strings(argv, string_t(input))
-    end if
-    if (tokenized .and. len_trim(args) > 0) call split_append(argv, args, .true., .true., tokenized)
-    if (tokenized) then
-        call add_strings(argv, string_t("-o"))
-        call add_strings(argv, string_t(output))
-    end if
+    call prepare_compile_argv(argv, self%cxx, input, args, output, tokenized)
 
     ! Execute command
     if (.not.mock) then
@@ -1677,7 +1675,11 @@ subroutine compile_cpp(self, input, output, args, log_file, stat, table, dry_run
 
     ! Optionally register compile command
     if (present(table)) then
-        call table%register(command, get_os_type(), error)
+        if (tokenized) then
+            call table%register(argv, input, error)
+        else
+            call table%register(command, get_os_type(), error)
+        end if
         stat = merge(-1,0,allocated(error))
     endif
 

@@ -2,7 +2,7 @@
 module test_toml
     use testsuite, only : new_unittest, unittest_t, error_t
     use tomlf, only: toml_table, toml_load
-    use fpm_toml, only: read_package_file, toml_array, toml_key, toml_stat, &
+    use fpm_toml, only: read_package_file, &
         get_value, set_value, get_list, new_table, add_table, add_array, len, &
         toml_error, toml_serialize, check_keys, set_list, set_string, &
         name_is_json
@@ -21,12 +21,12 @@ module test_toml
     use fpm_manifest_metapackages, only: metapackage_config_t
     use fpm_manifest_feature_collection, only: feature_collection_t
     use fpm_manifest_profile, only: profile_config_t
-    use fpm_environment, only: OS_ALL, OS_LINUX, OS_MACOS
+    use fpm_environment, only: OS_LINUX, OS_MACOS
     use fpm_versioning, only: new_version
     use fpm_strings, only: string_t, operator(==), split
     use fpm_model, only: fortran_config_t, package_t, FPM_SCOPE_LIB, FPM_UNIT_MODULE, fpm_model_t, &
          & srcfile_t
-    use fpm_compiler, only: archiver_t, compiler_t, id_all, id_gcc
+    use fpm_compiler, only: archiver_t, compiler_t, id_gcc
     use fpm_error, only: fatal_error
 
 
@@ -560,7 +560,7 @@ contains
             call get_list(table, key="lorem-ipsum", list=copy, error=error)
             if (allocated(error)) return
 
-            if (.not.(list==copy)) then
+            if (.not.(list == copy)) then
                call fatal_error(error,'string_array is not equal after TOML roundtrip')
                return
             end if
@@ -580,7 +580,7 @@ contains
         call get_list(table, key="lorem-ipsum", list=copy, error=error)
         if (allocated(error)) return
 
-        if (.not.(list==copy)) then
+        if (.not.(list == copy)) then
            call fatal_error(error,'empty string_array is not equal after TOML roundtrip')
            return
         end if
@@ -596,7 +596,7 @@ contains
         call get_list(table, key="lorem-ipsum", list=copy, error=error)
         if (allocated(error)) return
 
-        if (.not.(list==copy)) then
+        if (.not.(list == copy)) then
            call fatal_error(error,'deallocated string_array is not equal after TOML roundtrip')
            return
         end if

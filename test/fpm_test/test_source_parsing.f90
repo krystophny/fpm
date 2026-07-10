@@ -6,8 +6,8 @@ module test_source_parsing
     use fpm_model, only: srcfile_t, FPM_UNIT_PROGRAM, FPM_UNIT_MODULE, &
                          FPM_UNIT_SUBMODULE, FPM_UNIT_SUBPROGRAM, FPM_UNIT_CSOURCE, &
                          FPM_UNIT_CPPSOURCE, FPM_UNIT_NAME
-    use fpm_strings, only: operator(.in.), lower, string_t
-    use fpm_error, only: file_parse_error, fatal_error
+    use fpm_strings, only: operator(.in.), string_t
+    use fpm_error, only: fatal_error
     use fpm_manifest_preprocess, only: preprocess_config_t
     implicit none
     private

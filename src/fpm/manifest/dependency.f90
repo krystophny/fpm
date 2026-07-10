@@ -37,7 +37,7 @@ module fpm_manifest_dependency
         & set_value, set_string, get_list, set_list
     use fpm_filesystem, only: windows_path, join_path
     use fpm_environment, only: get_os_type, OS_WINDOWS
-    use fpm_manifest_metapackages, only: metapackage_config_t, is_meta_package, new_meta_config, &
+    use fpm_manifest_metapackages, only: metapackage_config_t, new_meta_config, &
             metapackage_request_t, new_meta_request
     use fpm_versioning, only: version_t, new_version
     use fpm_strings, only: string_t

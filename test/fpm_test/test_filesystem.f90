@@ -3,7 +3,7 @@ module test_filesystem
     use fpm_filesystem, only: canon_path, is_dir, mkdir, os_delete_dir, &
                               join_path, is_absolute_path, get_home, &
                               delete_file, read_lines, get_temp_filename
-    use fpm_environment, only: OS_WINDOWS, get_os_type, os_is_unix
+    use fpm_environment, only: os_is_unix
     use fpm_strings, only: string_t, split_lines_first_last
     implicit none
     private

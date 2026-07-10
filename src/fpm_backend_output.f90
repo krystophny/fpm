@@ -15,7 +15,7 @@ use fpm_error, only: error_t
 use fpm_filesystem, only: basename,join_path
 use fpm_targets, only: build_target_ptr
 use fpm_backend_console, only: console_t, LINE_RESET, COLOR_RED, COLOR_GREEN, COLOR_YELLOW, COLOR_RESET
-use fpm_compile_commands, only: compile_command_t, compile_command_table_t
+use fpm_compile_commands, only: compile_command_table_t
 implicit none
 
 private

@@ -18,7 +18,6 @@ module fpm_manifest
     use fpm_toml, only : read_package_file
     use fpm_manifest_test, only : test_config_t
     use fpm_filesystem, only: join_path, exists, dirname, is_dir
-    use fpm_environment, only: os_is_unix
     use fpm_strings, only: string_t
     implicit none
     private

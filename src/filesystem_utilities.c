@@ -328,11 +328,8 @@ int c_run_argv(const char *joined, int argc, const char *redirect)
 
 /*
  * Spawn a child process without waiting.  Returns the PID (>0) on
- * success, or a negative errno on failure.
- *
- * Must be called from a single thread — glibc's posix_spawn uses
- * clone(CLONE_VM|CLONE_VFORK) which shares the parent address space,
- * so concurrent spawns corrupt heap state.
+ * success, or a negative errno on failure.  Callers serialize spawning
+ * because allocator corruption was observed during concurrent spawns.
  */
 #ifndef _WIN32
 int c_spawn_argv(const char *joined, int argc, const char *redirect)
@@ -394,6 +391,20 @@ int c_wait_pid(int raw_pid)
     if (ws < 0) return -1;
     if (WIFEXITED(wait_status)) return WEXITSTATUS(wait_status);
     if (WIFSIGNALED(wait_status)) return 128 + WTERMSIG(wait_status);
+    return -1;
+}
+#else
+int c_spawn_argv(const char *joined, int argc, const char *redirect)
+{
+    (void)joined;
+    (void)argc;
+    (void)redirect;
+    return -1;
+}
+
+int c_wait_pid(int raw_pid)
+{
+    (void)raw_pid;
     return -1;
 }
 #endif

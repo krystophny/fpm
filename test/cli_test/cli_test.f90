@@ -250,10 +250,6 @@ use fpm_command_line, only: &
         fpm_install_settings, &
         get_command_line_settings, &
         fpm_publish_settings
-use fpm, only: cmd_run, cmd_clean
-use fpm_cmd_install, only: cmd_install
-use fpm_cmd_new, only: cmd_new
-use fpm_cmd_publish, only: cmd_publish
 class(fpm_cmd_settings), allocatable :: cmd_settings
 ! duplicates the calls as seen in the main program for fpm
 call get_command_line_settings(cmd_settings)

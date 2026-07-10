@@ -25,7 +25,7 @@ module fpm_meta
     use fpm_error, only: error_t, syntax_error, fatal_error
     use fpm_filesystem, only: join_path
 
-    use fpm_meta_base, only: metapackage_t, destroy
+    use fpm_meta_base, only: metapackage_t
     use fpm_meta_openmp, only: init_openmp
     use fpm_meta_stdlib, only: init_stdlib
     use fpm_meta_minpack, only: init_minpack
@@ -35,8 +35,6 @@ module fpm_meta
     use fpm_meta_blas, only: init_blas
     use fpm_manifest_metapackages, only: metapackage_request_t, metapackage_config_t
 
-    use shlex_module, only: shlex_split => split
-    use regex_module, only: regex
     use iso_fortran_env, only: stdout => output_unit
 
     implicit none
