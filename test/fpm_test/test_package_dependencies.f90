@@ -4,7 +4,9 @@ module test_package_dependencies
   use testsuite, only: new_unittest, unittest_t, error_t, test_failed
   use fpm_filesystem, only: is_dir, join_path, filewrite, mkdir, os_delete_dir, exists
   use fpm_environment, only: os_is_unix
-  use fpm_os, only: get_current_directory
+  use fpm_os, only: get_current_directory, change_directory
+  use fpm_source_parsing, only: parse_f_source
+  use fpm_model, only: srcfile_t
   use fpm_dependency
   use fpm_manifest_dependency
   use fpm_manifest_metapackages, only: metapackage_config_t
@@ -45,6 +47,7 @@ contains
     testsuite = [ &
         & new_unittest("cache-load-dump", test_cache_load_dump), &
         & new_unittest("cache-dump-load", test_cache_dump_load), &
+        & new_unittest("cached-local-path-change", test_cached_local_path_change), &
         & new_unittest("status-after-load", test_status), &
         & new_unittest("add-dependencies", test_add_dependencies), &
         & new_unittest("update-dependencies", test_update_dependencies), &
@@ -83,6 +86,90 @@ contains
         & ]
 
   end subroutine collect_package_dependencies
+
+  !> A current unresolved manifest must select new source despite a warm cache.
+  subroutine test_cached_local_path_change(error)
+    type(error_t), allocatable, intent(out) :: error
+    type(error_t), allocatable :: cleanup_error
+    type(dependency_tree_t) :: tree
+    type(package_config_t) :: package
+    type(srcfile_t) :: source
+    character(:), allocatable :: fixture, cwd, project
+    integer :: id, pass
+
+    call get_current_directory(cwd, error)
+    if (allocated(error)) return
+    fixture = get_temp_filename()
+    project = join_path(fixture, 'project')
+    call mkdir(join_path(project, 'src'))
+    call mkdir(join_path(fixture, 'old', 'src'))
+    call mkdir(join_path(fixture, 'new', 'src'))
+    call filewrite(join_path(project, 'src', 'consumer.f90'), &
+      [character(len=32) :: 'module consumer', 'end module consumer'])
+    call filewrite(join_path(fixture, 'old', 'fpm.toml'), &
+      [character(len=32) :: 'name = "provider"', 'version = "0.1.0"'])
+    call filewrite(join_path(fixture, 'new', 'fpm.toml'), &
+      [character(len=32) :: 'name = "provider"', 'version = "0.1.0"'])
+    call filewrite(join_path(fixture, 'old', 'src', 'provider.f90'), &
+      [character(len=32) :: 'module old_provider', 'end module old_provider'])
+    call filewrite(join_path(fixture, 'new', 'src', 'provider.f90'), &
+      [character(len=32) :: 'module new_provider', 'end module new_provider'])
+    call change_directory(project, error)
+    if (allocated(error)) then
+      call os_delete_dir(os_is_unix(), fixture)
+      return
+    end if
+
+    do pass = 1, 2
+      if (pass == 1) then
+        call filewrite('fpm.toml', [character(len=64) :: &
+          'name = "consumer"', '[dependencies]', &
+          'provider = { path = "../old" }'])
+      else
+        call filewrite('fpm.toml', [character(len=64) :: &
+          'name = "consumer"', '[dependencies]', &
+          'provider = { path = "../new" }'])
+      end if
+      ! Load real manifest configs before add_project reads prior cache nodes.
+      call get_package_data(package, 'fpm.toml', error)
+      if (allocated(error)) exit
+      call new_dependency_tree(tree, cache=join_path('build', 'cache.toml'))
+      call tree%add(package, error)
+      if (allocated(error)) exit
+      id = tree%find('provider')
+      if (id == 0) then
+        call test_failed(error, 'Local provider was not resolved')
+        exit
+      end if
+      source = parse_f_source(join_path(tree%dep(id)%proj_dir, 'src', 'provider.f90'), error)
+      if (allocated(error)) exit
+      if (.not. allocated(source%modules_provided)) then
+        call test_failed(error, 'Resolved provider source has no module')
+        exit
+      end if
+      if (size(source%modules_provided) /= 1) then
+        call test_failed(error, 'Resolved provider source should provide one module')
+        exit
+      end if
+      if (pass == 1) then
+        if (source%modules_provided(1)%s /= 'old_provider') then
+          call test_failed(error, 'Initial local dependency source is not old_provider')
+          exit
+        end if
+      else
+        if (source%modules_provided(1)%s /= 'new_provider') then
+          call test_failed(error, 'Warm cache overrides changed local dependency source')
+          exit
+        end if
+      end if
+    end do
+    call change_directory(cwd, cleanup_error)
+    if (allocated(cleanup_error)) then
+      if (.not. allocated(error)) call move_alloc(cleanup_error, error)
+      return
+    end if
+    call os_delete_dir(os_is_unix(), fixture)
+  end subroutine test_cached_local_path_change
 
   !> Round trip of the dependency cache from a dependency tree to a TOML document
   !> to a dependency tree

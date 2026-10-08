@@ -35,7 +35,7 @@ module fpm_manifest_dependency
     use tomlf, only: toml_table, toml_key, toml_stat
     use fpm_toml, only: get_value, check_keys, serializable_t, add_table, &
         & set_value, set_string, get_list, set_list
-    use fpm_filesystem, only: windows_path, join_path
+    use fpm_filesystem, only: windows_path, join_path, canon_path
     use fpm_environment, only: get_os_type, OS_WINDOWS
     use fpm_manifest_metapackages, only: metapackage_config_t, is_meta_package, new_meta_config, &
             metapackage_request_t, new_meta_request
@@ -418,6 +418,18 @@ contains
         has_changed = .true.
 
         !> Perform all checks
+        !> Cache entries store a resolved directory as path, including registry
+        !> downloads. Compare it when the manifest requests a local dependency.
+        if (allocated(manifest%path)) then
+            if (.not. allocated(cached%path)) then
+                if (verbosity>1) write(iunit,out_fmt) "PATH presence has changed. "
+                return
+            end if
+            if (canon_path(cached%path) /= canon_path(manifest%path)) then
+                if (verbosity>1) write(iunit,out_fmt) "PATH has changed: "//cached%path//" vs. "//manifest%path
+                return
+            end if
+        end if
         if (allocated(cached%git).neqv.allocated(manifest%git)) then
             if (verbosity>1) write(iunit,out_fmt) "GIT presence has changed. "
             return
