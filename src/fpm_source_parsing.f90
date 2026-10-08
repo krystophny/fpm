@@ -15,6 +15,7 @@
 !> - `[[parse_c_source]]`
 !>
 module fpm_source_parsing
+use, intrinsic :: iso_fortran_env, only: int64
 use fpm_error, only: error_t, file_parse_error, fatal_error, file_not_found_error
 use fpm_strings, only: string_t, string_cat, len_trim, split, lower, str_ends_with, fnv_1a, &
     is_fortran_name, operator(.in.), operator(==)
@@ -24,11 +25,13 @@ use fpm_model, only: srcfile_t, &
                     FPM_UNIT_CSOURCE, FPM_UNIT_CHEADER, FPM_SCOPE_UNKNOWN, &
                     FPM_SCOPE_DEP, FPM_SCOPE_APP, FPM_SCOPE_TEST, FPM_UNIT_CPPSOURCE
 use fpm_manifest_preprocess, only: preprocess_config_t
-use fpm_filesystem, only: read_lines, read_lines_expanded, exists, join_path, parent_dir
+use fpm_filesystem, only: read_lines, read_lines_expanded, exists, join_path, &
+    parent_dir, canon_path, is_absolute_path
 implicit none
 
 private
 public :: parse_f_source, parse_c_source, parse_use_statement
+public :: include_digest
 
 type :: cpp_block
     ! Nested block total depth
@@ -42,6 +45,63 @@ type :: cpp_block
 end type cpp_block
 
 contains
+
+!> Include literal quoted includes in the compilation cache key. Read them on
+!> every build: the containing source need not change when an include changes.
+function include_digest(filename, source_digest, include_dirs) result(digest)
+    character(*), intent(in) :: filename
+    type(string_t), optional, intent(in) :: include_dirs(:)
+    integer(int64), intent(in) :: source_digest
+    integer(int64) :: digest
+    type(string_t), allocatable :: visited(:), search_dirs(:)
+
+    digest = source_digest
+    allocate(visited(0), search_dirs(0))
+    if (present(include_dirs)) search_dirs = include_dirs
+    call hash_includes(filename, search_dirs, visited, digest)
+end function include_digest
+
+recursive subroutine hash_includes(filename, include_dirs, visited, digest)
+    character(*), intent(in) :: filename
+    type(string_t), intent(in) :: include_dirs(:)
+    type(string_t), allocatable, intent(inout) :: visited(:)
+    integer(int64), intent(inout) :: digest
+    type(string_t), allocatable :: lines(:), included(:)
+    character(:), allocatable :: name, path, canonical
+    logical :: is_include
+    integer :: i, j
+
+    canonical = canon_path(filename)
+    if (canonical .in. visited) return
+    visited = [visited, string_t(canonical)]
+    lines = read_lines_expanded(filename)
+    do i = 1, size(lines)
+        call is_include_line(lines(i)%s, is_include, name)
+        if (.not. is_include) cycle
+        if (is_absolute_path(name)) then
+            path = name
+        else
+            path = join_path(parent_dir(filename), name)
+            if (.not. exists(path)) then
+                do j = 1, size(include_dirs)
+                    path = join_path(include_dirs(j)%s, name)
+                    if (exists(path)) exit
+                end do
+            end if
+        end if
+        ! Missing files change the key too; the compiler reports whether an
+        ! unresolved include is active, including preprocessor conditionals.
+        digest = fnv_1a('include:'//name, digest)
+        if (.not. exists(path)) then
+            digest = fnv_1a('missing', digest)
+            cycle
+        end if
+        included = read_lines(path)
+        digest = fnv_1a(canon_path(path), digest)
+        if (size(included) > 0) digest = fnv_1a(included, digest)
+        call hash_includes(path, include_dirs, visited, digest)
+    end do
+end subroutine hash_includes
 
 !> Check if macro_name is defined in the macros list (case-sensitive, per CPP)
 !> Handles both "NAME" (defined without value) and "NAME=VALUE" formats

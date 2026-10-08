@@ -37,6 +37,7 @@ use fpm_targets, only: build_target_t, build_target_ptr, FPM_TARGET_OBJECT, &
                        FPM_TARGET_CPP_OBJECT, FPM_TARGET_SHARED
 use fpm_backend_output
 use fpm_compile_commands, only: compile_command_table_t
+use fpm_source_parsing, only: include_digest
 implicit none
 
 private
@@ -86,6 +87,19 @@ subroutine build_package(targets,model,verbose,dry_run)
 
     do i = 1, size(build_dirs)
        if (.not.dry_run) call mkdir(build_dirs(i)%s,verbose)
+    end do
+
+    ! Refresh include content before any cached object can be marked current.
+    do i = 1, size(targets)
+        if (.not. allocated(targets(i)%ptr%source)) cycle
+        if (allocated(model%include_dirs)) then
+            targets(i)%ptr%source%digest = include_digest( &
+                targets(i)%ptr%source%file_name, targets(i)%ptr%source%digest, &
+                model%include_dirs)
+        else
+            targets(i)%ptr%source%digest = include_digest( &
+                targets(i)%ptr%source%file_name, targets(i)%ptr%source%digest)
+        end if
     end do
 
     ! Perform depth-first topological sort of targets
