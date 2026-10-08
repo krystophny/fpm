@@ -129,7 +129,10 @@ type build_target_t
     !> Targets in the same schedule group are guaranteed to be independent
     integer :: schedule = -1
 
-    !> Previous source file hash
+    !> Current source and transitive dependency hash
+    integer(int64) :: digest = 0_int64
+
+    !> Previous source and transitive dependency hash
     integer(int64), allocatable :: digest_cached
 
     !> List of macros

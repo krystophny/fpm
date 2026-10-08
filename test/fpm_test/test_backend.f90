@@ -123,13 +123,23 @@ contains
             ! Mimick unmodified sources
             allocate(targets(i)%ptr%source)
             targets(i)%ptr%source%digest = i
-            targets(i)%ptr%digest_cached = i
 
         end do
 
         ! Mimick archive already exists
         open(newunit=fh,file=targets(1)%ptr%output_file,status="unknown")
         close(fh)
+
+        ! Populate the cache from an initial complete dependency graph.
+        do i=1,size(targets)
+            call sort_target(targets(i)%ptr)
+        end do
+        do i=1,size(targets)
+            targets(i)%ptr%digest_cached = targets(i)%ptr%digest
+            targets(i)%ptr%touched = .false.
+            targets(i)%ptr%sorted = .false.
+            targets(i)%ptr%skip = .false.
+        end do
 
         ! Perform depth-first topological sort of targets
         do i=1,size(targets)
