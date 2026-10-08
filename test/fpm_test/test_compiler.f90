@@ -2,8 +2,10 @@
 module test_compiler
     use testsuite, only : new_unittest, unittest_t, error_t, test_failed, &
         & check_string
-    use fpm_environment, only : OS_WINDOWS, OS_LINUX
-    use fpm_compiler   , only : compiler_t, new_compiler, tokenize_flags
+    use fpm_environment, only : OS_WINDOWS, OS_LINUX, os_is_unix
+    use fpm_compiler   , only : compiler_t, new_compiler, tokenize_flags, &
+                               archiver_t, new_archiver
+    use fpm_filesystem, only : get_temp_filename, mkdir, join_path, run, os_delete_dir
     use fpm_strings    , only : string_t, operator(==)
     use fpm_command_line, only: get_fpm_env
     use fpm_compile_commands, only: compile_command_table_t
@@ -27,9 +29,120 @@ contains
             & new_unittest("tokenize-flags", test_tokenize_flags), &
             & new_unittest("compile-commands-unix", test_register_compile_command_unix), &
             & new_unittest("compile-commands-windows", test_register_compile_command_windows), &
-            & new_unittest("get-default-flags-pic", test_get_default_flags_pic)]
+            & new_unittest("get-default-flags-pic", test_get_default_flags_pic), &
+            & new_unittest("archive-replaces-members", test_archive_replaces_members)]
 
     end subroutine collect_compiler
+
+    subroutine test_archive_replaces_members(error)
+        type(error_t), allocatable, intent(out) :: error
+        type(compiler_t) :: compiler
+        type(archiver_t) :: archiver
+        character(len=:), allocatable :: root, old_object, new_object, archive, log
+        character(len=:), allocatable :: before, after, executable
+        integer :: stat, mode
+
+        root = get_temp_filename()
+        call mkdir(root, echo=.false.)
+        old_object = join_path(root, 'old-path.o')
+        new_object = join_path(root, 'new-path.o')
+        archive = join_path(root, 'probe.a')
+        log = join_path(root, 'commands.log')
+        executable = join_path(root, 'probe.exe')
+        call new_compiler(compiler, get_fpm_env('FC', default='gfortran'), &
+            get_fpm_env('CC', default=' '), get_fpm_env('CXX', default=' '), &
+            echo=.false., verbose=.false.)
+        call new_archiver(archiver, get_fpm_env('AR', default=''), &
+            echo=.false., verbose=.false.)
+        call write_source('old.f90', &
+            'integer function archive_probe()'//new_line('a')// &
+            'archive_probe=11'//new_line('a')//'end'//new_line('a')// &
+            'integer function removed_probe()'//new_line('a')// &
+            'removed_probe=77'//new_line('a')//'end')
+        call write_source('new.f90', &
+            'integer function archive_probe()'//new_line('a')// &
+            'archive_probe=22'//new_line('a')//'end')
+        call compiler%compile_fortran(join_path(root, 'old.f90'), old_object, &
+                                      '', log, stat)
+        if (failed(stat /= 0, 'Cannot compile old archive provider')) return
+        call compiler%compile_fortran(join_path(root, 'new.f90'), new_object, &
+                                      '', log, stat)
+        if (failed(stat /= 0, 'Cannot compile new archive provider')) return
+
+        do mode = 0, 1
+            archiver%use_response_file = mode == 1
+            call archiver%make_archive(archive, [string_t(old_object)], log, stat)
+            if (failed(stat /= 0, 'Cannot create baseline archive')) return
+            call check_runtime(11)
+            if (allocated(error)) return
+            call archiver%make_archive(archive, [string_t(new_object)], log, stat)
+            if (failed(stat /= 0, 'Cannot publish replacement archive')) return
+            call check_runtime(22)
+            if (allocated(error)) return
+            call write_source('removed.f90', 'program removed'//new_line('a')// &
+                'integer removed_probe'//new_line('a')// &
+                'print *, removed_probe()'//new_line('a')//'end')
+            call compiler%link(executable, &
+                join_path(root, 'removed.f90')//' '//archive, log, stat)
+            if (failed(stat == 0, &
+                       'Replacement archive still exports a removed member')) return
+            call read_archive(before)
+            call archiver%make_archive(archive, &
+                [string_t(old_object), string_t(join_path(root, 'missing.o'))], &
+                log, stat)
+            if (failed(stat == 0, 'Missing archive input must fail')) return
+            call read_archive(after)
+            if (failed(after /= before, &
+                       'Failed archiver changed previous archive bytes')) return
+            call check_runtime(22)
+            if (allocated(error)) return
+        end do
+        call os_delete_dir(os_is_unix(), root)
+
+    contains
+
+        logical function failed(condition, message)
+            logical, intent(in) :: condition
+            character(len=*), intent(in) :: message
+            failed = condition
+            if (condition) call test_failed(error, message//': '//root)
+        end function failed
+
+        subroutine write_source(name, text)
+            character(len=*), intent(in) :: name, text
+            integer :: unit
+            open(newunit=unit, file=join_path(root, name), status='replace')
+            write(unit, '(a)') text
+            close(unit)
+        end subroutine write_source
+
+        subroutine read_archive(bytes)
+            character(len=:), allocatable, intent(out) :: bytes
+            integer :: unit, n
+            inquire(file=archive, size=n)
+            allocate(character(len=n) :: bytes)
+            open(newunit=unit, file=archive, status='old', &
+                 access='stream', form='unformatted')
+            read(unit) bytes
+            close(unit)
+        end subroutine read_archive
+
+        subroutine check_runtime(expected)
+            integer, intent(in) :: expected
+            character(len=16) :: value
+            integer :: result
+            write(value, '(i0)') expected
+            call write_source('main.f90', 'program probe'//new_line('a')// &
+                'integer archive_probe'//new_line('a')// &
+                'if(archive_probe()/='//trim(value)//') stop 1'//new_line('a')//'end')
+            call compiler%link(executable, &
+                join_path(root, 'main.f90')//' '//archive, log, result)
+            if (failed(result /= 0, 'Cannot link archive runtime oracle')) return
+            call run(executable, echo=.false., verbose=.false., exitstat=result)
+            if (result /= 0) call test_failed(error, &
+                'Archive runtime uses wrong provider: '//root)
+        end subroutine check_runtime
+    end subroutine test_archive_replaces_members
 
     subroutine test_check_fortran_source_runs(error)
         !> Error handling

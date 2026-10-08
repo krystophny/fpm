@@ -1628,10 +1628,10 @@ end subroutine link_shared
 
 
 !> Create an archive
-!> @todo For Windows OS, use the local `delete_file_win32` in stead of `delete_file`.
-!> This may be related to a bug in Mingw64-openmp and is expected to be resolved in the future,
-!> see issue #707, #708 and #808.
+!> Temporary archive and response files use checked local Fortran deletion,
+!> including Windows (see issues #707, #708 and #808).
 subroutine make_archive(self, output, args, log_file, stat, dry_run)
+    use, intrinsic :: iso_c_binding, only: c_char, c_int, c_null_char
     !> Instance of the archiver object
     class(archiver_t), intent(in) :: self
     !> Name of the archive to generate
@@ -1646,6 +1646,17 @@ subroutine make_archive(self, output, args, log_file, stat, dry_run)
     logical, optional, intent(in) :: dry_run
 
     logical :: mock
+    character(len=:), allocatable :: stage
+    character(len=8) :: header
+    integer :: unit, cleanup_stat
+
+    interface
+        function c_rename(old, new) bind(C, name='rename') result(status)
+            import :: c_char, c_int
+            character(kind=c_char), intent(in) :: old(*), new(*)
+            integer(c_int) :: status
+        end function c_rename
+    end interface
 
     ! Initialize intent(out) status so the mock path returns a defined value.
     stat = 0
@@ -1656,32 +1667,78 @@ subroutine make_archive(self, output, args, log_file, stat, dry_run)
 
     if (mock) return
 
+    ! Updating an existing archive retains members absent from args. Build a
+    ! fresh sibling so a failed archiver cannot corrupt the last good output.
+    stage = output//'.tmp-'//basename(get_temp_filename())
+    open(newunit=unit, file=stage, status='new', iostat=stat)
+    if (stat /= 0) return
+    close(unit, status='delete', iostat=stat)
+    if (stat /= 0) then
+        write(stderr, '(a)') 'Cannot remove temporary archive reservation '//stage
+        return
+    end if
+
     if (self%use_response_file) then
-        call write_response_file(output//".resp" , args)
+        call write_response_file(stage//".resp" , args)
         !$omp critical (run_command)
-        call run(self%ar // output // " @" // output//".resp", echo=self%echo, &
+        call run(self%ar // stage // " @" // stage//".resp", echo=self%echo, &
             &  verbose=self%verbose, redirect=log_file, exitstat=stat)
         !$omp end critical (run_command)
-        call delete_file_win32(output//".resp")
+        call remove_temporary(stage//".resp", cleanup_stat)
+        if (stat == 0) stat = cleanup_stat
 
     else
         !$omp critical (run_command)
-        call run(self%ar // output // " " // string_cat(args, " "), &
+        call run(self%ar // stage // " " // string_cat(args, " "), &
             & echo=self%echo, verbose=self%verbose, redirect=log_file, exitstat=stat)
         !$omp end critical (run_command)
     end if
 
-    contains
-        subroutine delete_file_win32(file)
-            character(len=*), intent(in) :: file
-            logical :: exist
-            integer :: unit, iostat
-            inquire(file=file, exist=exist)
-            if (exist) then
-                open(file=file, newunit=unit)
-                close(unit, status='delete', iostat=iostat)
+    if (stat == 0) then
+        open(newunit=unit, file=stage, status='old', action='read', &
+             access='stream', form='unformatted', iostat=stat)
+        if (stat == 0) then
+            read(unit, iostat=stat) header
+            close(unit, iostat=cleanup_stat)
+            if (stat == 0) stat = cleanup_stat
+            if (stat == 0) then
+                if (header /= '!<arch>'//achar(10) .and. &
+                    header /= '!<thin>'//achar(10)) stat = 1
             end if
-        end subroutine delete_file_win32
+        end if
+        if (stat /= 0) write(stderr, '(a)') &
+            'Archiver did not produce a valid archive: '//stage
+    end if
+    if (stat == 0) then
+        if (get_os_type() == OS_WINDOWS) then
+            !$omp critical (run_command)
+            call run('move /Y '//quote(stage, for_cmd=.true.)//' '// &
+                     quote(output, for_cmd=.true.), echo=self%echo, &
+                     verbose=self%verbose, exitstat=stat)
+            !$omp end critical (run_command)
+        else
+            stat = int(c_rename(stage//c_null_char, output//c_null_char))
+        end if
+        if (stat /= 0) write(stderr, '(a)') 'Cannot publish archive: '//output
+    end if
+    call remove_temporary(stage, cleanup_stat)
+    if (stat == 0) stat = cleanup_stat
+
+    contains
+        subroutine remove_temporary(file, status)
+            character(len=*), intent(in) :: file
+            integer, intent(out) :: status
+            logical :: exist
+            integer :: unit
+            inquire(file=file, exist=exist, iostat=status)
+            if (status /= 0) return
+            if (exist) then
+                open(file=file, newunit=unit, status='old', iostat=status)
+                if (status == 0) close(unit, status='delete', iostat=status)
+            end if
+            if (status /= 0) write(stderr, '(a)') &
+                'Cannot remove temporary archive file '//file
+        end subroutine remove_temporary
 end subroutine make_archive
 
 
