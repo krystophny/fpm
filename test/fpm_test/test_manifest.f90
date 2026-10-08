@@ -6,7 +6,7 @@ module test_manifest
     use fpm_manifest_profile, only: profile_config_t
     use fpm_manifest_platform, only: platform_config_t
     use fpm_compiler, only: id_gcc, id_intel_classic_nix
-    use fpm_environment, only: OS_LINUX
+    use fpm_environment, only: OS_LINUX, OS_WINDOWS, get_os_type
     use fpm_manifest_feature, only: feature_config_t
     use fpm_strings, only: operator(.in.), string_t
     use fpm_error, only: fatal_error, error_t
@@ -31,6 +31,8 @@ contains
             & new_unittest("default-library-type", test_default_library_type), &
             & new_unittest("default-executable", test_default_executable), &
             & new_unittest("dependency-empty", test_dependency_empty, should_fail=.true.), &
+            & new_unittest("dependency-absolute-path", test_dependency_absolute_path), &
+            & new_unittest("dependency-relative-path", test_dependency_relative_path), &
             & new_unittest("dependency-pathtag", test_dependency_pathtag, should_fail=.true.), &
             & new_unittest("dependency-gitpath", test_dependency_gitpath, should_fail=.true.), &
             & new_unittest("dependency-nourl", test_dependency_nourl, should_fail=.true.), &
@@ -342,6 +344,48 @@ contains
 
     end subroutine test_dependency_empty
 
+
+    subroutine test_dependency_absolute_path(error)
+        use fpm_manifest_dependency, only: new_dependency, dependency_config_t
+        type(error_t), allocatable, intent(out) :: error
+        type(toml_table) :: table
+        type(dependency_config_t) :: dependency
+        character(:), allocatable :: absolute, root
+
+        if (get_os_type() == OS_WINDOWS) then
+            absolute = 'C:\local-dependency'
+            root = 'D:\consumer'
+        else
+            absolute = '/tmp/local-dependency'
+            root = '/unrelated/consumer'
+        end if
+        call new_table(table)
+        table%key = 'example'
+        call set_value(table, 'path', absolute)
+        call new_dependency(dependency, table, root=root, error=error)
+        if (allocated(error)) return
+        call check_string(error, dependency%path, absolute, &
+                          'absolute dependency path must retain its root')
+    end subroutine test_dependency_absolute_path
+
+    subroutine test_dependency_relative_path(error)
+        use fpm_manifest_dependency, only: new_dependency, dependency_config_t
+        use fpm_filesystem, only: join_path, windows_path
+        type(error_t), allocatable, intent(out) :: error
+        type(toml_table) :: table
+        type(dependency_config_t) :: dependency
+        character(:), allocatable :: relative, root
+
+        relative = 'local-dependency'
+        root = 'consumer'
+        call new_table(table)
+        table%key = 'example'
+        call set_value(table, 'path', relative)
+        call new_dependency(dependency, table, root=root, error=error)
+        if (allocated(error)) return
+        call check_string(error, dependency%path, join_path(root, relative), &
+                          'relative dependency path remains relative to manifest')
+    end subroutine test_dependency_relative_path
 
     !> Try to create a dependency with conflicting entries
     subroutine test_dependency_pathtag(error)
