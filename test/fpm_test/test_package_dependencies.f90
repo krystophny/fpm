@@ -2,7 +2,7 @@
 module test_package_dependencies
   use fpm_filesystem, only: get_temp_filename
   use testsuite, only: new_unittest, unittest_t, error_t, test_failed
-  use fpm_filesystem, only: is_dir, join_path, filewrite, mkdir, os_delete_dir, exists
+  use fpm_filesystem, only: is_dir, join_path, filewrite, mkdir, os_delete_dir, exists, delete_file
   use fpm_environment, only: os_is_unix
   use fpm_os, only: get_current_directory, change_directory
   use fpm_source_parsing, only: parse_f_source
@@ -126,6 +126,8 @@ contains
           'name = "consumer"', '[dependencies]', &
           'provider = { path = "../old" }'])
       else
+        ! Replace only the manifest; keep the prior dependency cache warm.
+        call delete_file('fpm.toml')
         call filewrite('fpm.toml', [character(len=64) :: &
           'name = "consumer"', '[dependencies]', &
           'provider = { path = "../new" }'])
