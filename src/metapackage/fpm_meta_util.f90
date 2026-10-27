@@ -1,5 +1,5 @@
 module fpm_meta_util
-    use fpm_meta_base, only: metapackage_t, destroy
+    use fpm_meta_base, only: metapackage_t
     use fpm_filesystem, only: join_path
     use fpm_strings, only: split, string_t, str_begins_with_str, add_strings
     use fpm_error, only: error_t

@@ -34,14 +34,12 @@
 !>[extra]
 !>```
 module fpm_manifest_package
-    use fpm_manifest_build, only: build_config_t, new_build_config
     use fpm_manifest_dependency, only : dependency_config_t, new_dependencies
     use fpm_manifest_profile, only : profile_config_t, new_profiles, add_default_profiles
     use fpm_manifest_example, only : example_config_t, new_example
     use fpm_manifest_executable, only : executable_config_t, new_executable
     use fpm_manifest_fortran, only : fortran_config_t, new_fortran_config
     use fpm_manifest_library, only : library_config_t, new_library
-    use fpm_manifest_install, only: install_config_t, new_install_config
     use fpm_manifest_test, only : test_config_t, new_test
     use fpm_manifest_preprocess, only : preprocess_config_t, new_preprocessors
     use fpm_manifest_feature, only: feature_config_t, init_feature_components
@@ -856,10 +854,8 @@ contains
 
     !> Print feature collection information in verbose mode
     subroutine print_feature_collection(collection, platform)
-        use, intrinsic :: iso_fortran_env, only: stdout => output_unit
         use fpm_compiler, only: compiler_name
         use fpm_environment, only: os_name
-        use fpm_strings, only: string_cat
         type(feature_collection_t), intent(in) :: collection
         type(platform_config_t), intent(in) :: platform
 

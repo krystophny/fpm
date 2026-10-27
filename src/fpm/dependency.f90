@@ -64,8 +64,8 @@ module fpm_dependency
   use fpm_manifest, only: package_config_t, dependency_config_t, get_package_data, get_package_dependencies
   use fpm_manifest_dependency, only: manifest_has_changed, dependency_destroy
   use fpm_manifest_preprocess, only: operator(==)
-  use fpm_strings, only: string_t, operator(.in.), operator(==), str
-  use tomlf, only: toml_table, toml_key, toml_error, toml_load, toml_stat, toml_array, len, add_array
+  use fpm_strings, only: string_t, operator(==), str
+  use tomlf, only: toml_table, toml_key, toml_error, toml_load, toml_array, len
   use fpm_toml, only: toml_serialize, get_value, set_value, add_table, set_string, get_list, set_list
   use fpm_versioning, only: version_t, new_version
   use fpm_settings, only: fpm_global_settings, get_global_settings, official_registry_base_url

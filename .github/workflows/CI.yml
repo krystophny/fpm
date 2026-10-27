@@ -67,19 +67,19 @@ jobs:
           # artifact and activates the openmp metapackage via the
           # `openmp` feature (see fpm.toml). Older gcc on linux segfault
           # with --static + libgomp at atexit teardown (see issue #962),
-          # so they omit `--features openmp` and remain serial.
+          # so they select an explicit empty feature set and remain serial.
           - os: ubuntu-latest
             toolchain: {compiler: gcc, version: 10}
-            release-flags: --flag '--static -g -fbacktrace -O3'
+            release-flags: --features '' --flag '--static -g -fbacktrace -O3'
           - os: ubuntu-latest
             toolchain: {compiler: gcc, version: 11}
-            release-flags: --flag '--static -g -fbacktrace -O3'
+            release-flags: --features '' --flag '--static -g -fbacktrace -O3'
           - os: ubuntu-latest
             toolchain: {compiler: gcc, version: 12}
-            release-flags: --flag '--static -g -fbacktrace -O3'
+            release-flags: --features '' --flag '--static -g -fbacktrace -O3'
           - os: ubuntu-latest
             toolchain: {compiler: gcc, version: 13}
-            release-flags: --flag '--static -g -fbacktrace -O3'
+            release-flags: --features '' --flag '--static -g -fbacktrace -O3'
           - os: ubuntu-latest
             toolchain: {compiler: gcc, version: 14}
             release-flags: --features openmp --flag '--static -g -fbacktrace -O3'
@@ -97,9 +97,22 @@ jobs:
     - name: Setup Fortran compiler
       uses: fortran-lang/setup-fortran@v1.9.0
       id: setup-fortran
+      continue-on-error: ${{ contains(matrix.os, 'macos') && matrix.toolchain.compiler == 'gcc' && matrix.toolchain.version == 11 }}
       with:
         compiler: ${{ matrix.toolchain.compiler }}
         version: ${{ matrix.toolchain.version }}
+
+    - name: Recover Homebrew GCC 11 after setup postinstall failure
+      if: contains(matrix.os, 'macos') && matrix.toolchain.compiler == 'gcc' && matrix.toolchain.version == 11
+      shell: bash
+      run: |
+        GCC_PREFIX=$(brew --prefix gcc@11)
+        GFORTRAN="$GCC_PREFIX/bin/gfortran-11"
+        test -x "$GFORTRAN"
+        "$GFORTRAN" --version
+        echo "$GCC_PREFIX/bin" >> "$GITHUB_PATH"
+        echo "FC=$GFORTRAN" >> "$GITHUB_ENV"
+        echo "FPM_FC=$GFORTRAN" >> "$GITHUB_ENV"
 
     # Phase 1: Bootstrap fpm with existing version
     - name: Install fpm
@@ -115,7 +128,6 @@ jobs:
       if: contains(matrix.os, 'macos')
       run: |
         which gfortran-${{ matrix.toolchain.version }}
-        which gfortran
         BREW_PREFIX=$(brew --prefix)
 
         # Query the actual library paths that fpm expects
@@ -203,6 +215,11 @@ jobs:
         mv $(which fpm) fpm-bootstrap${{ matrix.exe }}
         echo "BOOTSTRAP=$PWD/fpm-bootstrap" >> $GITHUB_ENV
 
+    - name: Use bootstrap-compatible manifest
+      shell: bash
+      run: |
+        git apply ci/bootstrap.patch
+
     - name: Build Fortran fpm (bootstrap)
       shell: bash
       run: |
@@ -232,6 +249,11 @@ jobs:
         ${{ env.BOOTSTRAP }} run --runner cp -- fpm-debug${{ matrix.exe }}
         rm -v ${{ env.BOOTSTRAP }}
         echo "FPM=$PWD/fpm-debug" >> $GITHUB_ENV
+
+    - name: Restore default feature manifest
+      shell: bash
+      run: |
+        git apply --reverse ci/bootstrap.patch
 
     - name: Get version (normal)
       if: github.event_name != 'release'

@@ -18,8 +18,7 @@ module fpm_toml
     use tomlf, only: toml_table, toml_array, toml_key, toml_stat, get_value, &
         & set_value, toml_parse, toml_error, new_table, add_table, add_array, &
         & toml_serialize, len, toml_load, toml_value
-    use tomlf_de_parser, only: parse
-    use jonquil, only: json_serialize, json_error, json_value, json_object, json_load, &
+    use jonquil, only: json_serialize, json_load, &
                        cast_to_object
     use iso_fortran_env, only: int64
     implicit none

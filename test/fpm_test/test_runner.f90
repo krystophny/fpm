@@ -17,6 +17,7 @@ contains
 
         testsuite = [ &
             & new_unittest("run-executables-status", run_executables_status), &
+            & new_unittest("run-executables-windows-status", run_executables_windows_status), &
             & new_unittest("run-executables-parallel", run_executables_parallel) &
             ]
     end subroutine collect_runner
@@ -47,6 +48,34 @@ contains
 
         call os_delete_dir(os_is_unix(), dir)
     end subroutine run_executables_status
+
+    subroutine run_executables_windows_status(error)
+        type(error_t), allocatable, intent(out) :: error
+
+        type(fpm_test_settings) :: settings
+        type(string_t), allocatable :: executables(:)
+        integer, allocatable :: stat(:)
+        character(len=:), allocatable :: dir
+
+        if (os_is_unix()) return
+
+        call init_settings(settings)
+        settings%runner = 'cmd.exe /c'
+        call make_script_dir(dir)
+        call make_batch_script(dir, "pass.bat", 0)
+        call make_batch_script(dir, "fail.bat", 7)
+
+        executables = [string_t(dir//"/pass.bat"), string_t(dir//"/fail.bat")]
+        call run_executables(executables, settings, parallel=.true., stat=stat)
+
+        if (size(stat) /= 2) then
+            call test_failed(error, "wrong status count")
+        elseif (stat(1) /= 0 .or. stat(2) /= 7) then
+            call test_failed(error, "wrong run status values")
+        end if
+
+        call os_delete_dir(os_is_unix(), dir)
+    end subroutine run_executables_windows_status
 
     subroutine run_executables_parallel(error)
         type(error_t), allocatable, intent(out) :: error
@@ -115,5 +144,16 @@ contains
         close(unit)
         call run("chmod +x "//path, echo=.false., verbose=.false.)
     end subroutine make_script
+
+    subroutine make_batch_script(dir, name, status)
+        character(len=*), intent(in) :: dir, name
+        integer, intent(in) :: status
+
+        integer :: unit
+
+        open(newunit=unit, file=dir//"/"//name, status="replace")
+        write(unit, '(a,i0)') "@exit /b ", status
+        close(unit)
+    end subroutine make_batch_script
 
 end module test_runner

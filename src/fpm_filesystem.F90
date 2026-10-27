@@ -3,7 +3,6 @@
 module fpm_filesystem
     use,intrinsic :: iso_fortran_env, only : stdin=>input_unit, stdout=>output_unit, &
         stderr=>error_unit, int64
-    use,intrinsic :: iso_c_binding, only: c_new_line
     use fpm_environment, only: get_os_type, &
                                OS_UNKNOWN, OS_LINUX, OS_MACOS, OS_WINDOWS, &
                                OS_CYGWIN, OS_SOLARIS, OS_FREEBSD, OS_OPENBSD
@@ -17,9 +16,12 @@ module fpm_filesystem
     public :: basename, canon_path, dirname, is_dir, join_path, number_of_rows, list_files, get_local_prefix, &
             mkdir, exists, get_temp_filename, windows_path, unix_path, getline, delete_file, fileopen, fileclose, &
             filewrite, warnwrite, parent_dir, is_hidden_file, read_lines, read_lines_expanded, &
-            read_text_file, which, run, run_argv, spawn_argv, wait_pid, &
+            read_text_file, which, run, run_argv, &
             os_delete_dir, is_absolute_path, get_home, execute_and_read_output, get_dos_path, &
             get_file_mtime
+#ifndef FPM_BOOTSTRAP
+    public :: spawn_argv, wait_pid
+#endif
 
 #ifndef FPM_BOOTSTRAP
     interface
@@ -1157,6 +1159,21 @@ subroutine run_argv(args,echo,exitstat,verbose,redirect)
     if (size(args) < 1) then
         stat = 0
 #ifndef FPM_BOOTSTRAP
+    else if (os_is_unix()) then
+        ! Allocator corruption was observed while parallel builds spawned concurrently.
+        ! Serialize that interval and wait outside the lock so that
+        ! compilation remains concurrent.
+        block
+            integer :: pid
+            !$omp critical (run_command)
+            pid = spawn_argv(args, redirect_file)
+            !$omp end critical (run_command)
+            if (pid > 0) then
+                stat = wait_pid(pid)
+            else
+                stat = -1
+            end if
+        end block
     else
         joined = ""
         do i = 1, size(args)
@@ -1206,6 +1223,7 @@ subroutine run_argv(args,echo,exitstat,verbose,redirect)
 
 end subroutine run_argv
 
+#ifndef FPM_BOOTSTRAP
 !> Spawn a child process without waiting.  Returns the PID (>0), or
 !> a negative value on failure.  Must be called from a single thread.
 function spawn_argv(args, redirect) result(pid)
@@ -1231,6 +1249,7 @@ function wait_pid(pid) result(stat)
     integer :: stat
     stat = c_wait_pid(int(pid, c_int))
 end function wait_pid
+#endif
 
 !> Delete directory using system OS remove directory commands
 subroutine os_delete_dir(is_unix, dir, echo)

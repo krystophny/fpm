@@ -7,6 +7,7 @@ program test_stdlib_metapackage
     use stdlib_math
     implicit none
 
+    integer, parameter :: available_kinds(3) = [int32, int64, sp]
     real(dp), allocatable :: indices(:)
 
     indices = linspace(1.0_dp,5.0_dp,5)

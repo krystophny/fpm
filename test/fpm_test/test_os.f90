@@ -1,6 +1,6 @@
 module test_os
     use testsuite, only: new_unittest, unittest_t, error_t, test_failed
-    use fpm_filesystem, only: join_path, mkdir, os_delete_dir, is_dir, get_local_prefix, get_home
+    use fpm_filesystem, only: os_delete_dir, is_dir, get_home
     use fpm_environment, only: os_is_unix, get_env, set_env, delete_env
     use fpm_os, only: get_absolute_path, get_absolute_path_by_cd, get_current_directory
 

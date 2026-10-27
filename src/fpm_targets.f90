@@ -24,11 +24,11 @@
 !> Describes the type of build target — determines backend build rules
 !>
 module fpm_targets
-use iso_fortran_env, only: int64, stdout=>output_unit
+use iso_fortran_env, only: int64
 use fpm_error, only: error_t, fatal_error, fpm_stop
 use fpm_model
 use fpm_compiler, only : compiler_t
-use fpm_environment, only: get_os_type, OS_WINDOWS, OS_MACOS, library_filename
+use fpm_environment, only: get_os_type, OS_MACOS, library_filename
 use fpm_filesystem, only: dirname, join_path, canon_path
 use fpm_strings, only: string_t, operator(.in.), string_cat, fnv_1a, resize, lower, str_ends_with, &
     add_strings
@@ -36,7 +36,7 @@ use fpm_compiler, only: get_macros, is_cxx_gnu_based
 use fpm_sources, only: get_exe_name_with_suffix
 use fpm_manifest_library, only: library_config_t
 use fpm_manifest_preprocess, only: preprocess_config_t
-use fpm_versioning, only: version_t, new_version
+use fpm_versioning, only: version_t
 implicit none
 
 private

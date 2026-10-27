@@ -43,8 +43,10 @@ module fpm_compile_commands
         procedure :: write                => cct_write
         
         procedure, private :: cct_register
+        procedure, private :: cct_register_argv
         procedure, private :: cct_register_object
         generic   :: register             => cct_register, &
+                                             cct_register_argv, &
                                              cct_register_object
         
         !> Serialization interface
@@ -329,6 +331,42 @@ module fpm_compile_commands
         !$omp end critical (command_update)
 
     end subroutine cct_register
+
+    subroutine cct_register_argv(self, arguments, source_file, error)
+
+        class(compile_command_table_t), intent(inout) :: self
+        type(string_t), intent(in) :: arguments(:)
+        character(len=*), intent(in) :: source_file
+        type(error_t), allocatable, intent(out) :: error
+
+        type(compile_command_t) :: cmd
+        character(len=:), allocatable :: cwd
+        integer :: i
+
+        if (size(arguments) == 0) then
+            call syntax_error(error, "compile_command_table_t trying to register empty arguments")
+            return
+        end if
+        if (len_trim(source_file) == 0) then
+            call syntax_error(error, "compile_command_table_t trying to register an empty source file")
+            return
+        end if
+
+        call get_current_directory(cwd, error)
+        if (allocated(error)) return
+
+        cmd%directory = string_t(trim(cwd))
+        allocate(cmd%arguments(size(arguments)))
+        do i = 1, size(arguments)
+            cmd%arguments(i) = arguments(i)
+        end do
+        cmd%file = string_t(source_file)
+
+        !$omp critical (command_update)
+        call cct_register_object(self, cmd, error)
+        !$omp end critical (command_update)
+
+    end subroutine cct_register_argv
     
     pure subroutine cct_register_object(self, command, error)
     

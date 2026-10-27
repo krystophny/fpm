@@ -1,9 +1,9 @@
 module fpm
-use fpm_strings, only: string_t, operator(.in.), glob, join, string_cat, &
+use fpm_strings, only: string_t, operator(.in.), join, string_cat, &
                       lower, str_ends_with, is_fortran_name, str_begins_with_str, &
                       is_valid_module_name, len_trim
 use fpm_backend, only: build_package
-use fpm_command_line, only: fpm_build_settings, fpm_new_settings, &
+use fpm_command_line, only: fpm_build_settings, &
                       fpm_run_settings, fpm_install_settings, fpm_test_settings, &
                       fpm_clean_settings
 use fpm_dependency, only : new_dependency_tree
@@ -29,8 +29,7 @@ use fpm_toml, only: name_is_json
 use, intrinsic :: iso_fortran_env, only : stdin => input_unit, &
                                         & stdout => output_unit, &
                                         & stderr => error_unit
-use iso_c_binding, only: c_char, c_ptr, c_int, c_null_char, c_associated, c_f_pointer
-use fpm_environment, only: os_is_unix, get_os_type, OS_WINDOWS, OS_MACOS, get_env, set_env, delete_env
+use fpm_environment, only: os_is_unix, get_os_type, OS_WINDOWS, OS_MACOS, get_env, set_env
 use fpm_settings, only: fpm_global_settings, get_global_settings
 
 implicit none
@@ -440,7 +439,7 @@ subroutine check_modules_for_duplicates(model, duplicates_found)
       do l=1,size(model%packages(k)%sources)
         if (allocated(model%packages(k)%sources(l)%modules_provided)) then
           do m=1,size(model%packages(k)%sources(l)%modules_provided)
-            if (model%packages(k)%sources(l)%modules_provided(m)%s.in.modules(:modi-1)) then
+            if (model%packages(k)%sources(l)%modules_provided(m)%s .in. modules(:modi-1)) then
               write(stderr, *) "Warning: Module ",model%packages(k)%sources(l)%modules_provided(m)%s, &
                 " in ",model%packages(k)%sources(l)%file_name," is a duplicate"
               duplicates_found = .true.

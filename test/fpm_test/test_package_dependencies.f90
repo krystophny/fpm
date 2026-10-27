@@ -1,6 +1,5 @@
 !> Define tests for the `fpm_dependency` module
 module test_package_dependencies
-  use fpm_filesystem, only: get_temp_filename
   use testsuite, only: new_unittest, unittest_t, error_t, test_failed
   use fpm_filesystem, only: is_dir, join_path, filewrite, mkdir, os_delete_dir, exists
   use fpm_environment, only: os_is_unix
@@ -8,9 +7,8 @@ module test_package_dependencies
   use fpm_dependency
   use fpm_manifest_dependency
   use fpm_manifest_metapackages, only: metapackage_config_t
-  use fpm_manifest, only: package_config_t, get_package_data
   use tomlf, only: toml_table, new_table
-  use fpm_toml, only: toml_key, add_table, set_value, get_value
+  use fpm_toml, only: toml_key, add_table, set_value
   use fpm_settings, only: fpm_global_settings, get_registry_settings, get_global_settings
   use fpm_downloader, only: downloader_t
   use fpm_versioning, only: version_t

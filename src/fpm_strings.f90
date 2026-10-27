@@ -38,7 +38,7 @@ use iso_fortran_env, only: int64
 use,intrinsic :: iso_fortran_env, only : stdin=>input_unit,   &
                                        & stdout=>output_unit, &
                                        & stderr=>error_unit
-use iso_c_binding, only: c_char, c_ptr, c_int, c_null_char, c_associated, c_f_pointer, c_size_t
+use iso_c_binding, only: c_char, c_ptr, c_null_char, c_f_pointer, c_size_t
 implicit none
 
 private

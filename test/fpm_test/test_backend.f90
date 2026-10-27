@@ -2,8 +2,8 @@
 module test_backend
     use testsuite, only : new_unittest, unittest_t, error_t, test_failed
     use test_module_dependencies, only: operator(.in.)
-    use fpm_filesystem, only: exists, mkdir, get_temp_filename, delete_file
-    use fpm_targets, only: build_target_t, build_target_ptr, &
+    use fpm_filesystem, only: exists, get_temp_filename, delete_file
+    use fpm_targets, only: build_target_ptr, &
                             FPM_TARGET_OBJECT, FPM_TARGET_ARCHIVE, FPM_TARGET_SHARED, &
                            add_target, add_dependency
     use fpm_backend, only: sort_target, schedule_targets, object_can_skip, deps_fingerprint
@@ -241,7 +241,7 @@ contains
         ! Check all targets enqueued
         do i=1,size(targets)
 
-            if (.not.(targets(i)%ptr.in.queue)) then
+            if (.not.(targets(i)%ptr .in. queue)) then
 
                 call test_failed(error,"Target not found in build queue")
                 return
