@@ -179,4 +179,32 @@ expect 2 "$fpm" run
 popd
 echo "✓ Submodules compile again when private entities of their ancestor change"
 
+echo "Test 7: sources whose included files changed"
+mkdir -p "$work/include/src" "$work/include/include" "$work/include/app"
+pushd "$work/include"
+printf 'name = "include"\n' > fpm.toml
+printf 'module a\ncontains\n  integer function f()\n    include "a.inc"\n  end function\nend module\n' > src/a.f90
+printf 'program main\n  use a\n  print *, f()\nend program\n' > app/main.f90
+# a.inc includes b.inc from the include directory
+include_a() {
+    printf 'include "b.inc"\nf = f + %s\n' "$1" > src/a.inc
+}
+include_b() {
+    printf 'f = 10*%s\n' "$1" > include/b.inc
+}
+include_a 1
+include_b 1
+"$fpm" build
+expect 11 "$fpm" run
+include_a 2
+"$fpm" build
+expect 12 "$fpm" run
+include_b 2
+"$fpm" build
+expect 22 "$fpm" run
+rm include/b.inc
+build_fails
+popd
+echo "✓ Sources are rebuilt after their included files changed"
+
 echo "All incremental rebuild tests passed"
