@@ -68,7 +68,8 @@ subroutine build_package(targets,model,verbose,dry_run,jobs)
     integer :: i, j, n_jobs, n_threads
     type(build_target_ptr), allocatable :: queue(:)
     integer, allocatable :: schedule_ptr(:), stat(:)
-    logical :: build_failed, skip_current
+    integer, allocatable :: n_unmet(:), rdep_ptr(:), rdep_idx(:)
+    logical :: build_failed
     type(string_t), allocatable :: build_dirs(:)
     type(string_t) :: temp
     type(error_t), allocatable :: error
@@ -128,55 +129,85 @@ subroutine build_package(targets,model,verbose,dry_run,jobs)
     end if
     n_threads = build_threads(n_jobs)
 
-    ! Loop over parallel schedule regions
-    do i=1,size(schedule_ptr)-1
+    ! Dependency-driven schedule: each target is built as soon as its own dependencies
+    ! are, with no barrier between schedule regions. gfortran keeps the length of a
+    ! deferred-length character function result in a static variable that all threads
+    ! share: code run from build_ready takes such results under critical (fpm_string_result)
+    call build_dependency_graph(queue, n_unmet, rdep_ptr, rdep_idx)
 
-        ! Build targets in schedule region i. gfortran keeps the length of a deferred-length
-        ! character function result in a static variable that all threads share: code run
-        ! from this loop takes such results under critical (fpm_string_result)
-        !$omp parallel do default(shared) private(skip_current) schedule(dynamic,1) num_threads(n_threads)
-        do j=schedule_ptr(i),(schedule_ptr(i+1)-1)
-
-            ! Check if build already failed
-            !$omp atomic read
-            skip_current = build_failed
-
-            if (.not.skip_current) then
-                if (.not.dry_run) call progress%compiling_status(j)
-                call build_target(model,queue(j)%ptr,verbose,dry_run, &
-                                  progress%compile_commands,stat(j))
-                if (.not.dry_run) call progress%completed_status(j,stat(j))
-            end if
-
-            ! Set global flag if this target failed to build
-            if (stat(j) /= 0) then
-                !$omp atomic write
-                build_failed = .true.
-            end if
-
-        end do
-
-        ! Check if this schedule region failed: exit with message if failed
-        if (build_failed) then
-            write(*,*)
-            do j=1,size(stat)
-                if (stat(j) /= 0) Then
-                    call print_build_log(queue(j)%ptr)
-                end if
-            end do
-            do j=1,size(stat)
-                if (stat(j) /= 0) then
-                    write(stderr,'(*(g0:,1x))') '<ERROR> Compilation failed for object "',basename(queue(j)%ptr%output_file),'"'
-                end if
-            end do
-            call fpm_stop(1,'stopping due to failed compilation')
+    !$omp parallel default(shared) num_threads(n_threads)
+    !$omp single
+    do j=1,size(queue)
+        if (n_unmet(j) == 0) then
+            !$omp task firstprivate(j)
+            call build_ready(j)
+            !$omp end task
         end if
-
     end do
+    !$omp end single
+    !$omp end parallel
+
+    ! Exit with message if any target failed
+    if (build_failed) then
+        write(*,*)
+        do j=1,size(stat)
+            if (stat(j) /= 0) Then
+                call print_build_log(queue(j)%ptr)
+            end if
+        end do
+        do j=1,size(stat)
+            if (stat(j) /= 0) then
+                write(stderr,'(*(g0:,1x))') '<ERROR> Compilation failed for object "',basename(queue(j)%ptr%output_file),'"'
+            end if
+        end do
+        call fpm_stop(1,'stopping due to failed compilation')
+    end if
 
     if (.not.dry_run) call progress%success()
     call progress%dump_commands(error)
     if (allocated(error)) call fpm_stop(1,'error writing compile_commands.json: '//trim(error%message))
+
+contains
+
+    !> Build queued target j, whose dependencies are built, then start each dependent
+    !> whose last dependency it was. After a failure, nothing new is started
+    recursive subroutine build_ready(j)
+        integer, intent(in) :: j
+
+        integer :: e, k, n_left
+        logical :: skip_current
+
+        ! Check if build already failed
+        !$omp atomic read
+        skip_current = build_failed
+        if (skip_current) return
+
+        if (.not.dry_run) call progress%compiling_status(j)
+        call build_target(model,queue(j)%ptr,verbose,dry_run, &
+                progress%compile_commands,stat(j))
+        if (.not.dry_run) call progress%completed_status(j,stat(j))
+
+        ! Set global flag if this target failed to build
+        if (stat(j) /= 0) then
+            !$omp atomic write
+            build_failed = .true.
+            return
+        end if
+
+        do e=rdep_ptr(j),rdep_ptr(j+1)-1
+            k = rdep_idx(e)
+            !$omp atomic capture
+            n_unmet(k) = n_unmet(k) - 1
+            n_left = n_unmet(k)
+            !$omp end atomic
+            if (n_left == 0) then
+                !$omp task firstprivate(k)
+                call build_ready(k)
+                !$omp end task
+            end if
+        end do
+
+    end subroutine build_ready
 
 end subroutine build_package
 
@@ -319,6 +350,65 @@ subroutine schedule_targets(queue, schedule_ptr, targets)
     end do
 
 end subroutine schedule_targets
+
+
+!> Count the queued dependencies of each queued target in `n_unmet`, and list the
+!> queued dependents of each target `m` in `rdep_idx(rdep_ptr(m):rdep_ptr(m+1)-1)`
+subroutine build_dependency_graph(queue, n_unmet, rdep_ptr, rdep_idx)
+    type(build_target_ptr), intent(in) :: queue(:)
+    integer, allocatable, intent(out) :: n_unmet(:), rdep_ptr(:), rdep_idx(:)
+
+    integer :: n, k, d, m
+    integer, allocatable :: fill(:)
+
+    n = size(queue)
+    do k = 1, n
+        queue(k)%ptr%queue_index = k
+    end do
+
+    allocate(n_unmet(n), source=0)
+    allocate(rdep_ptr(n+1), source=0)
+    do k = 1, n
+        do d = 1, size(queue(k)%ptr%dependencies)
+            m = queued(queue(k)%ptr%dependencies(d)%ptr)
+            if (m > 0) then
+                n_unmet(k) = n_unmet(k) + 1
+                rdep_ptr(m+1) = rdep_ptr(m+1) + 1
+            end if
+        end do
+    end do
+
+    rdep_ptr(1) = 1
+    do k = 1, n
+        rdep_ptr(k+1) = rdep_ptr(k) + rdep_ptr(k+1)
+    end do
+    allocate(rdep_idx(rdep_ptr(n+1)-1))
+    fill = rdep_ptr(1:n)
+    do k = 1, n
+        do d = 1, size(queue(k)%ptr%dependencies)
+            m = queued(queue(k)%ptr%dependencies(d)%ptr)
+            if (m > 0) then
+                rdep_idx(fill(m)) = k
+                fill(m) = fill(m) + 1
+            end if
+        end do
+    end do
+
+contains
+
+    !> Queue position of a target, or 0 if it is not queued
+    integer function queued(target)
+        type(build_target_t), intent(in), target :: target
+
+        queued = target%queue_index
+        if (queued < 1 .or. queued > n) then
+            queued = 0
+        else if (.not.associated(queue(queued)%ptr, target)) then
+            queued = 0
+        end if
+    end function queued
+
+end subroutine build_dependency_graph
 
 
 !> Call compile/link command for a single target.
