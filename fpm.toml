@@ -26,6 +26,11 @@ fortran-shlex.tag = "2.0.1"
 [features.openmp.dependencies]
 openmp = "*"
 
+# The fork builds with OpenMP by default; `--profile nodefault` builds serially
+[profiles]
+default = ["openmp"]
+nodefault = []
+
 [[test]]
 name = "cli-test"
 source-dir = "test/cli_test"

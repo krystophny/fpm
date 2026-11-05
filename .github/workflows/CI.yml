@@ -70,13 +70,13 @@ jobs:
           # artifact and activates the openmp metapackage via the
           # `openmp` feature (see fpm.toml). Older gcc on linux segfault
           # with --static + libgomp at atexit teardown (see issue #962),
-          # so they omit `--features openmp` and remain serial.
+          # so they build serially with the empty `nodefault` profile.
           - os: ubuntu-latest
             toolchain: {compiler: gcc, version: 12}
-            release-flags: --flag '--static -g -fbacktrace -O3'
+            release-flags: --profile nodefault --flag '--static -g -fbacktrace -O3'
           - os: ubuntu-latest
             toolchain: {compiler: gcc, version: 13}
-            release-flags: --flag '--static -g -fbacktrace -O3'
+            release-flags: --profile nodefault --flag '--static -g -fbacktrace -O3'
           - os: ubuntu-latest
             toolchain: {compiler: gcc, version: 14}
             release-flags: --features openmp --flag '--static -g -fbacktrace -O3'
@@ -86,14 +86,14 @@ jobs:
           - os: ubuntu-24.04
             os-arch: linux-x86_64
             toolchain: {compiler: intel, version: '2025.2'}
-            release-flags: --flag '--static -g -fbacktrace -O3'
+            release-flags: --profile nodefault --flag '--static -g -fbacktrace -O3'
           - os: ubuntu-24.04
             os-arch: linux-x86_64
             toolchain: {compiler: intel, version: '2026.1'}
-            release-flags: --flag '--static -g -fbacktrace -O3'
+            release-flags: --profile nodefault --flag '--static -g -fbacktrace -O3'
           - os: macos-15
             toolchain: {compiler: gcc, version: 15}
-            release-flags: --flag '-g -fbacktrace -Og -fcheck=all,no-recursion -Wno-external-argument-mismatch'
+            release-flags: --profile nodefault --flag '-g -fbacktrace -Og -fcheck=all,no-recursion -Wno-external-argument-mismatch'
           # -static-libquadmath exists from gcc 13 on; older gcc keep libquadmath dynamic.
           - os: macos-15
             toolchain: {compiler: gcc, version: 12}
