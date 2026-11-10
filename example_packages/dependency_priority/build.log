@@ -1,0 +1,10 @@
+ <INFO> BUILD_NAME: build/gfortran
+ <INFO> COMPILER:  gfortran
+ <INFO> C COMPILER:  gcc
+ <INFO> CXX COMPILER: g++
+ <INFO> COMPILER OPTIONS:   
+ <INFO> C COMPILER OPTIONS:   
+ <INFO> CXX COMPILER OPTIONS:  
+ <INFO> LINKER OPTIONS:   
+ <INFO> INCLUDE DIRECTORIES:  []
+[100%] Project compiled successfully.

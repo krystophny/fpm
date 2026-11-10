@@ -1,0 +1,9 @@
+# Dep: dependency_tree version 0.1.0 at ./.
+# Dep: toml-f version 0.3.1 at build/dependencies/toml-f
+# Dep: jonquil version 0.2.0 at build/dependencies/jonquil
+# Update: toml-f
+Reinitialized existing Git repository in /mnt/storage/wt/fpm/jonquil-pin-20261030/example_packages/dependency_priority/build/dependencies/toml-f/.git/
+# Dep: toml-f version 0.3.1 at build/dependencies/toml-f
+# Update: jonquil
+Reinitialized existing Git repository in /mnt/storage/wt/fpm/jonquil-pin-20261030/example_packages/dependency_priority/build/dependencies/jonquil/.git/
+# Dep: jonquil version 0.2.0 at build/dependencies/jonquil
